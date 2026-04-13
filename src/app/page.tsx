@@ -109,6 +109,25 @@ function getXPForLevel(level: number): number {
   return level * level * 50
 }
 
+// ===== SMART STREAK HELPERS =====
+// A weekly habit is "satisfied" for a day if: completed today OR weekly target already met this week
+function isHabitSatisfiedForDay(habit: Habit, dateStr: string): boolean {
+  if (habit.frequency === 'daily') {
+    return !!habit.completions[dateStr]
+  }
+  // Weekly: satisfied if completed today OR weekly target already met
+  if (habit.completions[dateStr]) return true
+  const weekDates = getWeekDates()
+  const weekCompletions = weekDates.filter((d) => habit.completions[d]).length
+  return weekCompletions >= habit.weeklyTarget
+}
+
+// A day is "complete" for streak purposes if all habits are satisfied
+function isDayCompleteForStreak(habits: Habit[], dateStr: string): boolean {
+  if (habits.length === 0) return false
+  return habits.every((h) => isHabitSatisfiedForDay(h, dateStr))
+}
+
 function getXPProgress(totalXP: number): number {
   const level = getLevel(totalXP)
   const currentLevelXP = getXPForLevel(level)
@@ -321,6 +340,11 @@ function HabitCard({
   const weekCompletions = weekDates.filter((d) => habit.completions[d]).length
   const isCelebrating = celebratingId === habit.id
 
+  // Smart streak: is this habit "needed" today for the streak?
+  const isWeeklyTargetMet = habit.frequency === 'weekly' && weekCompletions >= habit.weeklyTarget
+  const isNeededToday = habit.frequency === 'daily' || !isWeeklyTargetMet
+  const isOptionalToday = habit.frequency === 'weekly' && isWeeklyTargetMet && !isCompleted
+
   return (
     <div
       className="animate-slide-up rounded-2xl bg-white shadow-md border border-gray-100 overflow-hidden"
@@ -338,9 +362,26 @@ function HabitCard({
             </span>
             <div>
               <h3 className="font-bold text-base text-gray-800">{habit.name}</h3>
-              <p className="text-xs text-gray-400">
-                {habit.frequency === 'daily' ? 'Todos los días' : `Mín. ${habit.weeklyTarget}/semana`}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-gray-400">
+                  {habit.frequency === 'daily' ? 'Todos los días' : `Mín. ${habit.weeklyTarget}/semana`}
+                </p>
+                {isOptionalToday && (
+                  <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+                    ✓ Meta cumplida
+                  </span>
+                )}
+                {isNeededToday && !isCompleted && habit.frequency === 'weekly' && (
+                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">
+                    Necesario hoy
+                  </span>
+                )}
+                {isNeededToday && !isCompleted && habit.frequency === 'daily' && (
+                  <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                    Necesario hoy
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1 bg-orange-50 px-2.5 py-1 rounded-full">
@@ -742,7 +783,7 @@ function InsightsScreen({ userData }: { userData: UserData }) {
   const goodMoodRate = calcMoodCompletionRate(goodMoodDates)
   const badMoodRate = calcMoodCompletionRate(badMoodDates)
 
-  // e) Racha sin fallar (consecutive days where ALL habits completed)
+  // e) Racha sin fallar (consecutive days where all required habits satisfied)
   const calculatePerfectStreak = () => {
     if (userData.habits.length === 0) return 0
     let streak = 0
@@ -751,8 +792,8 @@ function InsightsScreen({ userData }: { userData: UserData }) {
       const d = new Date(today)
       d.setDate(today.getDate() - i)
       const dateStr = getDateStr(d)
-      const allCompleted = userData.habits.every((h) => h.completions[dateStr])
-      if (allCompleted) {
+      const dayComplete = isDayCompleteForStreak(userData.habits, dateStr)
+      if (dayComplete) {
         streak++
       } else {
         // If today and not all completed yet, don't break — check yesterday
@@ -1025,7 +1066,7 @@ function InsightsScreen({ userData }: { userData: UserData }) {
           <div>
             <p className="text-white/70 text-xs font-medium">RACHA ACTUAL</p>
             <p className="text-4xl font-black">{userData.globalStreak}</p>
-            <p className="text-white/70 text-xs">días seguidos</p>
+            <p className="text-white/70 text-xs">días cumpliendo lo necesario</p>
           </div>
           <div className="text-5xl animate-fire-dance">🔥</div>
           <div className="text-right">
@@ -1459,7 +1500,7 @@ function SettingsScreen({
         <p className="font-bold text-gray-700">HabitDuo</p>
         <p className="text-xs text-gray-400">Tu rastreador de hábitos gamificado</p>
         <div className="mt-2 pt-2 border-t border-gray-100">
-          <p className="text-[10px] text-gray-300">v1.2.0</p>
+          <p className="text-[10px] text-gray-300">v1.3.0</p>
           <p className="text-[10px] text-gray-400 mt-1">💾 Tus datos se guardan localmente en este navegador (localStorage). Si borras los datos del navegador se perderán.</p>
         </div>
       </div>
@@ -1731,7 +1772,7 @@ function processStreakOnLoad(data: UserData): UserData {
 
   // If we haven't processed today yet
   if (data.lastActiveDate !== today) {
-    // Check if yesterday was missed
+    // Check if yesterday was missed (smart streak: weekly habits with met targets don't break streak)
     if (data.lastActiveDate && data.lastActiveDate !== yesterday && data.lastActiveDate !== today) {
       // There's a gap - check if streak freeze is available
       const daysSinceLastActive = Math.round(
@@ -1739,28 +1780,44 @@ function processStreakOnLoad(data: UserData): UserData {
       )
 
       if (daysSinceLastActive === 1) {
-        // Only missed one day - try to use streak freeze
-        if (data.streakFreezes > 0 && !data.streakFreezeUsed[yesterday]) {
+        // Only missed one day - check if the day was actually "complete" using smart logic
+        const missedDate = data.lastActiveDate
+        const dayWasComplete = isDayCompleteForStreak(data.habits, missedDate)
+        if (dayWasComplete) {
+          // Day was complete, no need for freeze
+        } else if (data.streakFreezes > 0 && !data.streakFreezeUsed[yesterday]) {
           next.streakFreezes -= 1
           next.streakFreezeUsed = { ...data.streakFreezeUsed, [yesterday]: true }
-          // Streak is preserved!
         } else {
-          // No freeze available - reset streak
           next.globalStreak = 0
         }
       } else if (daysSinceLastActive > 1) {
-        // Missed multiple days - definitely reset
-        next.globalStreak = 0
+        // Missed multiple days - check each day
+        let streakBroken = false
+        for (let i = 1; i < daysSinceLastActive; i++) {
+          const d = new Date(data.lastActiveDate)
+          d.setDate(d.getDate() + i)
+          const dateStr = getDateStr(d)
+          if (!isDayCompleteForStreak(data.habits, dateStr)) {
+            // Try streak freeze for the first missed day only
+            if (!streakBroken && data.streakFreezes > 0 && !data.streakFreezeUsed[dateStr]) {
+              next.streakFreezes -= 1
+              next.streakFreezeUsed = { ...data.streakFreezeUsed, [dateStr]: true }
+            } else {
+              streakBroken = true
+              next.globalStreak = 0
+              break
+            }
+          }
+        }
       }
 
       // Also update individual habit streaks
       next.habits = next.habits.map((h) => {
         let habitStreak = h.streak
-        // Check each day since last active
         for (let d = new Date(data.lastActiveDate); d < new Date(today); d.setDate(d.getDate() + 1)) {
           const dateStr = getDateStr(d)
           if (!h.completions[dateStr]) {
-            // For daily habits, missing a day resets streak
             if (h.frequency === 'daily') {
               habitStreak = 0
             }
@@ -1929,17 +1986,22 @@ export default function Home() {
       // Add XP
       const newTotalXP = prev.totalXP + habit.xpPerCompletion
 
-      // Check if all habits completed today -> earn streak freeze
-      const allCompleted = newHabits.every((h) => h.completions[today])
+      // Smart streak: check if all habits are satisfied for today
+      // Daily habits: must be completed today
+      // Weekly habits: completed today OR weekly target already met
+      const dayComplete = isDayCompleteForStreak(newHabits, today)
+      const allActuallyCompleted = newHabits.every((h) => h.completions[today])
+
+      // Earn streak freeze only when ALL habits are actually completed today (even optional ones)
       let newStreakFreezes = prev.streakFreezes
-      if (allCompleted && prev.streakFreezes < prev.maxStreakFreezes) {
+      if (allActuallyCompleted && prev.streakFreezes < prev.maxStreakFreezes) {
         newStreakFreezes = prev.streakFreezes + 1
       }
 
-      // Update global streak
+      // Update global streak (smart logic: weekly habits with met targets don't break streak)
       const yesterday = getYesterdayStr()
       let newGlobalStreak = prev.globalStreak
-      if (allCompleted || newHabits.filter((h) => h.completions[today]).length === newHabits.length) {
+      if (dayComplete) {
         if (prev.lastStreakDate === yesterday || prev.lastStreakDate === today) {
           if (prev.lastStreakDate !== today) {
             newGlobalStreak = prev.globalStreak + 1
@@ -1966,7 +2028,7 @@ export default function Home() {
         streakFreezes: newStreakFreezes,
         globalStreak: newGlobalStreak,
         bestGlobalStreak: newBestGlobalStreak,
-        lastStreakDate: allCompleted || newHabits.filter((h) => h.completions[today]).length === newHabits.length ? today : prev.lastStreakDate,
+        lastStreakDate: dayComplete ? today : prev.lastStreakDate,
       }
 
       return next
@@ -2175,6 +2237,49 @@ export default function Home() {
                 </span>
               </div>
             )}
+
+            {/* Smart streak progress: how many needed habits are done */}
+            {(() => {
+              const todayStr = today
+              const neededHabits = userData.habits.filter((h) => {
+                if (h.frequency === 'daily') return true
+                const weekD = getWeekDates()
+                const wc = weekD.filter((d) => h.completions[d]).length
+                return wc < h.weeklyTarget
+              })
+              const neededDone = neededHabits.filter((h) => h.completions[todayStr]).length
+              const allNeededDone = neededHabits.length > 0 && neededDone === neededHabits.length
+              if (neededHabits.length === 0) return null
+              return (
+                <div className={`rounded-2xl p-3 border ${allNeededDone ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-100'}`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{allNeededDone ? '🔥' : '🎯'}</span>
+                      <span className={`text-sm font-bold ${allNeededDone ? 'text-green-700' : 'text-gray-600'}`}>
+                        {allNeededDone ? '¡Racha asegurada hoy!' : 'Progreso del día para tu racha'}
+                      </span>
+                    </div>
+                    <span className={`text-sm font-black ${allNeededDone ? 'text-green-600' : 'text-gray-500'}`}>
+                      {neededDone}/{neededHabits.length}
+                    </span>
+                  </div>
+                  <div className="h-2 bg-white rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${neededHabits.length > 0 ? (neededDone / neededHabits.length) * 100 : 0}%`,
+                        backgroundColor: allNeededDone ? DUO_GREEN : DUO_ORANGE,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {allNeededDone
+                      ? 'Los hábitos semanales con meta cumplida son opcionales'
+                      : `${neededHabits.length - neededDone} hábito${neededHabits.length - neededDone !== 1 ? 's' : ''} necesario${neededHabits.length - neededDone !== 1 ? 's' : ''} para mantener tu racha`}
+                  </p>
+                </div>
+              )
+            })()}
 
             {/* Today's habits */}
             <div className="space-y-3">
