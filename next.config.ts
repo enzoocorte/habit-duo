@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  output: "export",
+  basePath: "/habit-duo",
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;
