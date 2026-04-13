@@ -17,6 +17,11 @@ interface Habit {
   xpPerCompletion: number
 }
 
+interface JournalEntry {
+  mood: string
+  text: string
+}
+
 interface UserData {
   habits: Habit[]
   totalXP: number
@@ -31,6 +36,7 @@ interface UserData {
   bestGlobalStreak: number
   lastStreakDate: string
   streakFreezeUsed: Record<string, boolean>
+  journalEntries: Record<string, JournalEntry>
 }
 
 type Tab = 'home' | 'stats' | 'settings'
@@ -184,6 +190,7 @@ function getDefaultUserData(): UserData {
     bestGlobalStreak: 0,
     lastStreakDate: '',
     streakFreezeUsed: {},
+    journalEntries: {},
   }
 }
 
@@ -201,6 +208,7 @@ function loadData(): UserData {
       ...data,
       habits: data.habits || defaults.habits,
       streakFreezeUsed: data.streakFreezeUsed || {},
+      journalEntries: data.journalEntries || {},
     }
   } catch {
     return getDefaultUserData()
@@ -331,7 +339,7 @@ function HabitCard({
             <div>
               <h3 className="font-bold text-base text-gray-800">{habit.name}</h3>
               <p className="text-xs text-gray-400">
-                {habit.frequency === 'daily' ? 'Todos los días' : `${habit.weeklyTarget} veces por semana`}
+                {habit.frequency === 'daily' ? 'Todos los días' : `Mín. ${habit.weeklyTarget}/semana`}
               </p>
             </div>
           </div>
@@ -351,19 +359,29 @@ function HabitCard({
           <div className="mb-3">
             <div className="flex justify-between text-xs text-gray-400 mb-1">
               <span>Progreso semanal</span>
-              <span className="font-bold" style={{ color: habit.color }}>
-                {weekCompletions}/{habit.weeklyTarget}
+              <span className="font-bold" style={{ color: weekCompletions >= habit.weeklyTarget ? DUO_GREEN : habit.color }}>
+                {weekCompletions}/{habit.weeklyTarget} {weekCompletions >= habit.weeklyTarget ? '✓' : ''}
               </span>
             </div>
-            <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden relative">
+              {/* Minimum target marker */}
+              <div
+                className="absolute top-0 h-full w-0.5 bg-gray-400/50 z-10"
+                style={{ left: '100%' }}
+              />
               <div
                 className="h-full rounded-full transition-all duration-500 ease-out"
                 style={{
                   width: `${Math.min(100, (weekCompletions / habit.weeklyTarget) * 100)}%`,
-                  backgroundColor: habit.color,
+                  backgroundColor: weekCompletions >= habit.weeklyTarget ? DUO_GREEN : habit.color,
                 }}
               />
             </div>
+            {weekCompletions >= habit.weeklyTarget && (
+              <p className="text-[10px] text-duo-green font-bold mt-1">
+                {weekCompletions === habit.weeklyTarget ? '¡Meta alcanzada!' : `¡${weekCompletions - habit.weeklyTarget} extra! 🌟`}
+              </p>
+            )}
           </div>
         )}
 
@@ -439,6 +457,186 @@ function WeeklyOverview({ habits }: { habits: Habit[] }) {
                 }`}
               >
                 {allDone && !isFuture ? '✓' : someDone ? `${completedCount}` : isFuture ? '' : '·'}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ===== JOURNAL CARD =====
+const MOODS = [
+  { emoji: '🤩', label: 'Increíble', color: '#FFD700' },
+  { emoji: '😊', label: 'Bien', color: DUO_GREEN },
+  { emoji: '😐', label: 'Normal', color: DUO_YELLOW },
+  { emoji: '😔', label: 'Mal', color: DUO_ORANGE },
+  { emoji: '😡', label: 'Terrible', color: DUO_RED },
+]
+
+function JournalCard({
+  todayStr,
+  entry,
+  onSave,
+}: {
+  todayStr: string
+  entry: JournalEntry | undefined
+  onSave: (date: string, entry: JournalEntry) => void
+}) {
+  const [isEditing, setIsEditing] = useState(!entry?.text && !entry?.mood)
+  const [selectedMood, setSelectedMood] = useState(entry?.mood || '')
+  const [text, setText] = useState(entry?.text || '')
+
+  const currentMood = MOODS.find((m) => m.emoji === selectedMood)
+
+  const handleSave = () => {
+    if (!selectedMood && !text.trim()) return
+    onSave(todayStr, { mood: selectedMood, text: text.trim() })
+    setIsEditing(false)
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden animate-slide-up">
+      <div className="h-1.5 bg-gradient-to-r from-purple-400 to-pink-400" />
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-gray-700 text-sm">📝 ¿Cómo te sentiste hoy?</h3>
+          {!isEditing && entry && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Editar
+            </button>
+          )}
+        </div>
+
+        {isEditing ? (
+          <div className="space-y-3">
+            {/* Mood selector */}
+            <div>
+              <p className="text-xs text-gray-400 mb-2">Tu estado de ánimo</p>
+              <div className="flex gap-2 justify-center">
+                {MOODS.map((m) => (
+                  <button
+                    key={m.emoji}
+                    onClick={() => setSelectedMood(m.emoji)}
+                    className={`flex flex-col items-center gap-0.5 p-2 rounded-xl transition-all active:scale-90 ${
+                      selectedMood === m.emoji
+                        ? 'bg-purple-50 ring-2 ring-purple-300 scale-110'
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="text-2xl">{m.emoji}</span>
+                    <span className={`text-[9px] font-medium ${selectedMood === m.emoji ? 'text-purple-600' : 'text-gray-400'}`}>
+                      {m.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Text input */}
+            <div>
+              <p className="text-xs text-gray-400 mb-1">Notas del día (opcional)</p>
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="¿Qué pasó hoy? ¿Cómo te fue con tus hábitos?"
+                className="w-full px-3 py-2.5 rounded-xl bg-gray-100 border-0 text-gray-700 text-sm font-medium focus:ring-2 focus:ring-purple-300 focus:bg-white transition-all resize-none"
+                rows={3}
+                maxLength={500}
+              />
+              <p className="text-[10px] text-gray-300 text-right mt-0.5">{text.length}/500</p>
+            </div>
+
+            {/* Save button */}
+            <button
+              onClick={handleSave}
+              disabled={!selectedMood && !text.trim()}
+              className={`w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${
+                selectedMood || text.trim()
+                  ? 'bg-gradient-to-r from-purple-400 to-pink-400 text-white shadow-lg'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              Guardar
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Display saved entry */}
+            <div className="flex items-center gap-3">
+              {currentMood && (
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                  style={{ backgroundColor: currentMood.color + '20' }}
+                >
+                  {selectedMood}
+                </div>
+              )}
+              <div className="flex-1">
+                {currentMood && (
+                  <p className="font-bold text-sm text-gray-700">{currentMood.label}</p>
+                )}
+                {entry?.text ? (
+                  <p className="text-xs text-gray-500 line-clamp-2">{entry.text}</p>
+                ) : (
+                  <p className="text-xs text-gray-400 italic">Sin notas</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ===== JOURNAL HISTORY =====
+function JournalHistory({ journalEntries }: { journalEntries: Record<string, JournalEntry> }) {
+  const sortedEntries = Object.entries(journalEntries)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .slice(0, 7)
+
+  if (sortedEntries.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100 text-center">
+        <p className="text-3xl mb-2">📝</p>
+        <p className="text-sm text-gray-400">Aún no tienes entradas en tu diario</p>
+        <p className="text-xs text-gray-300 mt-1">Registra cómo te sientes cada día desde la pantalla de inicio</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+      <h3 className="font-bold text-gray-700 mb-3 text-sm">📝 Diario reciente</h3>
+      <div className="space-y-2">
+        {sortedEntries.map(([date, entry]) => {
+          const moodObj = MOODS.find((m) => m.emoji === entry.mood)
+          const d = new Date(date + 'T12:00:00')
+          const dayLabel = DAY_NAMES_FULL[d.getDay() === 0 ? 6 : d.getDay() - 1]
+          const dayNum = d.getDate()
+          const monthLabel = MONTH_NAMES[d.getMonth()]
+          return (
+            <div key={date} className="flex items-start gap-3 p-2.5 rounded-xl bg-gray-50">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ backgroundColor: moodObj ? moodObj.color + '20' : '#f3f4f6' }}
+              >
+                {entry.mood || '📝'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-400 font-medium">
+                  {dayLabel} {dayNum} de {monthLabel}
+                </p>
+                {entry.text ? (
+                  <p className="text-sm text-gray-700 mt-0.5 line-clamp-2">{entry.text}</p>
+                ) : (
+                  <p className="text-xs text-gray-400 italic mt-0.5">{moodObj?.label || 'Sin notas'}</p>
+                )}
               </div>
             </div>
           )
@@ -707,7 +905,7 @@ function SettingsScreen({
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm text-gray-700">{habit.name}</p>
                 <p className="text-xs text-gray-400">
-                  {habit.frequency === 'daily' ? 'Diario' : `${habit.weeklyTarget}x/semana`} · {habit.xpPerCompletion} XP
+                  {habit.frequency === 'daily' ? 'Diario' : `Mín. ${habit.weeklyTarget}/semana`} · {habit.xpPerCompletion} XP
                 </p>
               </div>
               <button
@@ -793,7 +991,10 @@ function SettingsScreen({
         <p className="text-2xl mb-1">🔥</p>
         <p className="font-bold text-gray-700">HabitDuo</p>
         <p className="text-xs text-gray-400">Tu rastreador de hábitos gamificado</p>
-        <p className="text-xs text-gray-300 mt-1">v1.0.0</p>
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <p className="text-[10px] text-gray-300">v1.1.0</p>
+          <p className="text-[10px] text-gray-400 mt-1">💾 Tus datos se guardan localmente en este navegador (localStorage). Si borras los datos del navegador se perderán.</p>
+        </div>
       </div>
     </div>
   )
@@ -913,7 +1114,7 @@ function HabitFormModalInner({
         {frequency === 'weekly' && (
           <div className="mb-5">
             <label className="text-sm font-bold text-gray-600 mb-1 block">
-              Veces por semana: {weeklyTarget}
+              Mínimo por semana: {weeklyTarget}
             </label>
             <input
               type="range"
@@ -1360,6 +1561,15 @@ export default function Home() {
     })
   }, [])
 
+  // Save journal entry
+  const saveJournal = useCallback((date: string, entry: JournalEntry) => {
+    setUserData((prev) => {
+      const next = { ...prev, journalEntries: { ...prev.journalEntries, [date]: entry } }
+      saveData(next)
+      return next
+    })
+  }, [])
+
   // Delete habit
   const deleteHabit = useCallback((id: string) => {
     setUserData((prev) => {
@@ -1531,6 +1741,13 @@ export default function Home() {
               </div>
             )}
 
+            {/* Journal / Mood */}
+            <JournalCard
+              todayStr={today}
+              entry={userData.journalEntries[today]}
+              onSave={saveJournal}
+            />
+
             {/* Weekly Overview */}
             {userData.habits.length > 0 && <WeeklyOverview habits={userData.habits} />}
 
@@ -1549,7 +1766,12 @@ export default function Home() {
           </div>
         )}
 
-        {activeTab === 'stats' && <StatsScreen userData={userData} />}
+        {activeTab === 'stats' && (
+          <>
+            <StatsScreen userData={userData} />
+            <JournalHistory journalEntries={userData.journalEntries} />
+          </>
+        )}
 
         {activeTab === 'settings' && (
           <SettingsScreen
