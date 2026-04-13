@@ -39,7 +39,7 @@ interface UserData {
   journalEntries: Record<string, JournalEntry>
 }
 
-type Tab = 'home' | 'stats' | 'settings'
+type Tab = 'home' | 'insights' | 'settings'
 
 // ===== CONSTANTS =====
 const DUO_GREEN = '#58CC02'
@@ -646,8 +646,8 @@ function JournalHistory({ journalEntries }: { journalEntries: Record<string, Jou
   )
 }
 
-// ===== STATS SCREEN =====
-function StatsScreen({ userData }: { userData: UserData }) {
+// ===== INSIGHTS SCREEN =====
+function InsightsScreen({ userData }: { userData: UserData }) {
   const last7Days = getLast7Days()
   const level = getLevel(userData.totalXP)
   const completionRates = last7Days.map((day) => {
@@ -657,7 +657,7 @@ function StatsScreen({ userData }: { userData: UserData }) {
     return Math.round((completed / total) * 100)
   })
 
-  // Last 30 days completion rate
+  // Last 30 days
   const last30Days: string[] = []
   for (let i = 29; i >= 0; i--) {
     const d = new Date()
@@ -670,8 +670,327 @@ function StatsScreen({ userData }: { userData: UserData }) {
   }, 0)
   const completionRate30 = totalPossible > 0 ? Math.round((totalCompleted30 / totalPossible) * 100) : 0
 
+  // === NEW ANALYTICS ===
+
+  // a) Hábito más difícil / más fácil
+  const habitRates = userData.habits.map((habit) => {
+    const completed = last30Days.filter((d) => habit.completions[d]).length
+    const rate = last30Days.length > 0 ? Math.round((completed / last30Days.length) * 100) : 0
+    return { habit, rate, completed }
+  })
+  const hardestHabit = habitRates.length > 0 ? habitRates.reduce((a, b) => a.rate <= b.rate ? a : b) : null
+  const easiestHabit = habitRates.length > 0 ? habitRates.reduce((a, b) => a.rate >= b.rate ? a : b) : null
+
+  // b) Tendencia semanal
+  const getWeekCompletionRate = (weekOffset: number) => {
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const mondayThisWeek = new Date(today)
+    mondayThisWeek.setDate(today.getDate() - ((dayOfWeek + 6) % 7))
+    const mondayTarget = new Date(mondayThisWeek)
+    mondayTarget.setDate(mondayThisWeek.getDate() + weekOffset * 7)
+    const weekDates: string[] = []
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(mondayTarget)
+      d.setDate(mondayTarget.getDate() + i)
+      if (d <= new Date()) {
+        weekDates.push(getDateStr(d))
+      }
+    }
+    if (weekDates.length === 0 || userData.habits.length === 0) return 0
+    const completed = weekDates.reduce((acc, day) => {
+      return acc + userData.habits.filter((h) => h.completions[day]).length
+    }, 0)
+    const total = weekDates.length * userData.habits.length
+    return total > 0 ? Math.round((completed / total) * 100) : 0
+  }
+  const thisWeekRate = getWeekCompletionRate(0)
+  const lastWeekRate = getWeekCompletionRate(-1)
+  const weekDiff = thisWeekRate - lastWeekRate
+
+  // c) Tu mejor día
+  const dayCompletionRates = [0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
+    const datesForDay = last30Days.filter((d) => {
+      const date = new Date(d + 'T12:00:00')
+      const jsDay = date.getDay()
+      return (jsDay === 0 ? 6 : jsDay - 1) === dayIdx
+    })
+    if (datesForDay.length === 0 || userData.habits.length === 0) return { dayIdx, rate: 0, count: 0 }
+    const completed = datesForDay.reduce((acc, day) => {
+      return acc + userData.habits.filter((h) => h.completions[day]).length
+    }, 0)
+    const total = datesForDay.length * userData.habits.length
+    return { dayIdx, rate: Math.round((completed / total) * 100), count: datesForDay.length }
+  })
+  const bestDay = dayCompletionRates.reduce((a, b) => a.rate >= b.rate ? a : b)
+
+  // d) Correlación ánimo-hábitos
+  const goodMoods = ['🤩', '😊']
+  const badMoods = ['😔', '😡']
+  const journalDates = Object.keys(userData.journalEntries)
+  const goodMoodDates = journalDates.filter((d) => goodMoods.includes(userData.journalEntries[d].mood))
+  const badMoodDates = journalDates.filter((d) => badMoods.includes(userData.journalEntries[d].mood))
+
+  const calcMoodCompletionRate = (dates: string[]) => {
+    if (dates.length === 0 || userData.habits.length === 0) return 0
+    const completed = dates.reduce((acc, day) => {
+      return acc + userData.habits.filter((h) => h.completions[day]).length
+    }, 0)
+    const total = dates.length * userData.habits.length
+    return total > 0 ? Math.round((completed / total) * 100) : 0
+  }
+  const goodMoodRate = calcMoodCompletionRate(goodMoodDates)
+  const badMoodRate = calcMoodCompletionRate(badMoodDates)
+
+  // e) Racha sin fallar (consecutive days where ALL habits completed)
+  const calculatePerfectStreak = () => {
+    if (userData.habits.length === 0) return 0
+    let streak = 0
+    const today = new Date()
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      const dateStr = getDateStr(d)
+      const allCompleted = userData.habits.every((h) => h.completions[dateStr])
+      if (allCompleted) {
+        streak++
+      } else {
+        // If today and not all completed yet, don't break — check yesterday
+        if (i === 0) continue
+        break
+      }
+    }
+    return streak
+  }
+  const perfectStreak = calculatePerfectStreak()
+
+  // f) Last 8 weeks trend chart
+  const weeklyTrendData: { label: string; rate: number }[] = []
+  for (let w = 7; w >= 0; w--) {
+    const rate = getWeekCompletionRate(-w)
+    weeklyTrendData.push({ label: `Sem ${8 - w}`, rate })
+  }
+
+  const getBarColor = (rate: number) => {
+    if (rate >= 80) return DUO_GREEN
+    if (rate >= 50) return DUO_YELLOW
+    if (rate >= 25) return DUO_ORANGE
+    if (rate > 0) return DUO_RED
+    return '#E5E5E5'
+  }
+
   return (
     <div className="animate-tab-enter space-y-4 pb-6">
+
+      {/* ===== NEW ANALYTICS SECTION ===== */}
+
+      {/* a) Hábito más difícil / más fácil */}
+      {hardestHabit && easiestHabit && userData.habits.length > 1 && (
+        <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+          <h3 className="font-bold text-gray-700 mb-3 text-sm">🎯 Dificultad de hábitos</h3>
+          <p className="text-xs text-gray-400 mb-3">Tasa de completado en los últimos 30 días</p>
+          <div className="space-y-3">
+            {hardestHabit && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-100">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🔴</span>
+                    <span className="text-sm font-bold text-gray-700">Más difícil</span>
+                  </div>
+                  <span className="text-sm font-black text-red-500">{hardestHabit.rate}%</span>
+                </div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span>{hardestHabit.habit.emoji}</span>
+                  <span className="text-sm text-gray-600">{hardestHabit.habit.name}</span>
+                </div>
+                <div className="h-2.5 bg-red-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.max(4, hardestHabit.rate)}%`, backgroundColor: DUO_RED }}
+                  />
+                </div>
+              </div>
+            )}
+            {easiestHabit && (
+              <div className="p-3 rounded-xl bg-green-50 border border-green-100">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">🟢</span>
+                    <span className="text-sm font-bold text-gray-700">Más fácil</span>
+                  </div>
+                  <span className="text-sm font-black text-duo-green">{easiestHabit.rate}%</span>
+                </div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span>{easiestHabit.habit.emoji}</span>
+                  <span className="text-sm text-gray-600">{easiestHabit.habit.name}</span>
+                </div>
+                <div className="h-2.5 bg-green-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.max(4, easiestHabit.rate)}%`, backgroundColor: DUO_GREEN }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* b) Tendencia semanal */}
+      <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+        <h3 className="font-bold text-gray-700 mb-1 text-sm">📈 Tendencia semanal</h3>
+        <p className="text-xs text-gray-400 mb-3">Comparación con la semana pasada</p>
+        <div className="flex items-center justify-center gap-3 py-2">
+          <div className="text-center">
+            <p className="text-3xl font-black text-gray-800">{thisWeekRate}%</p>
+            <p className="text-xs text-gray-400">Esta semana</p>
+          </div>
+          <div className="flex flex-col items-center">
+            {weekDiff > 0 ? (
+              <span className="text-2xl font-black text-duo-green">↑ {weekDiff}%</span>
+            ) : weekDiff < 0 ? (
+              <span className="text-2xl font-black text-red-500">↓ {Math.abs(weekDiff)}%</span>
+            ) : (
+              <span className="text-2xl font-black text-gray-400">= 0%</span>
+            )}
+            <p className="text-[10px] text-gray-400">vs semana pasada</p>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-2">
+          <div className="flex-1 p-2 rounded-xl bg-gray-50 text-center">
+            <p className="text-lg font-bold text-gray-600">{lastWeekRate}%</p>
+            <p className="text-[10px] text-gray-400">Semana pasada</p>
+          </div>
+          <div className="flex-1 p-2 rounded-xl bg-duo-green/10 text-center">
+            <p className="text-lg font-bold text-duo-green">{thisWeekRate}%</p>
+            <p className="text-[10px] text-gray-400">Esta semana</p>
+          </div>
+        </div>
+      </div>
+
+      {/* c) Tu mejor día */}
+      <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+        <h3 className="font-bold text-gray-700 mb-1 text-sm">🌟 Tu mejor día</h3>
+        <p className="text-xs text-gray-400 mb-3">Día de la semana con mayor tasa de completado (últimos 30 días)</p>
+        <div className="flex items-center gap-3 justify-center py-2">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-black text-lg shadow-md"
+            style={{ backgroundColor: DUO_GREEN }}
+          >
+            {DAY_NAMES[bestDay.dayIdx]}
+          </div>
+          <div>
+            <p className="text-2xl font-black text-gray-800">{DAY_NAMES_FULL[bestDay.dayIdx]}</p>
+            <p className="text-sm text-gray-400">
+              Promedio: <span className="font-bold text-duo-green">{bestDay.rate}%</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* d) Correlación ánimo-hábitos */}
+      {journalDates.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+          <h3 className="font-bold text-gray-700 mb-1 text-sm">🧠 Ánimo y hábitos</h3>
+          <p className="text-xs text-gray-400 mb-3">¿Cómo afecta tu ánimo a tus hábitos?</p>
+          <div className="flex gap-3">
+            <div className="flex-1 p-3 rounded-xl bg-green-50 border border-green-100 text-center">
+              <div className="text-2xl mb-1">😊</div>
+              <p className="text-xs text-gray-500 mb-1">Buen ánimo</p>
+              <p className="text-xl font-black text-duo-green">{goodMoodRate}%</p>
+              <p className="text-[10px] text-gray-400">{goodMoodDates.length} días</p>
+              <div className="h-2 bg-green-100 rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${Math.max(4, goodMoodRate)}%`, backgroundColor: DUO_GREEN }}
+                />
+              </div>
+            </div>
+            <div className="flex-1 p-3 rounded-xl bg-red-50 border border-red-100 text-center">
+              <div className="text-2xl mb-1">😔</div>
+              <p className="text-xs text-gray-500 mb-1">Mal ánimo</p>
+              <p className="text-xl font-black text-red-500">{badMoodRate}%</p>
+              <p className="text-[10px] text-gray-400">{badMoodDates.length} días</p>
+              <div className="h-2 bg-red-100 rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${Math.max(4, badMoodRate)}%`, backgroundColor: DUO_RED }}
+                />
+              </div>
+            </div>
+          </div>
+          {goodMoodRate > 0 && badMoodRate > 0 && goodMoodRate - badMoodRate > 10 && (
+            <p className="text-xs text-gray-400 mt-2 text-center">
+              💡 Completas <span className="font-bold text-duo-green">{goodMoodRate - badMoodRate}% más</span> cuando estás de buen ánimo
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* e) Racha sin fallar */}
+      <div className="bg-gradient-to-br from-emerald-400 to-green-600 rounded-2xl p-5 text-white shadow-lg">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-white/70 text-xs font-medium">RACHA PERFECTA</p>
+            <p className="text-4xl font-black">{perfectStreak}</p>
+            <p className="text-white/70 text-xs">días sin fallar ningún hábito</p>
+          </div>
+          <div className="text-5xl animate-fire-dance">💎</div>
+        </div>
+        {perfectStreak >= 7 && (
+          <div className="mt-3 flex items-center gap-2 bg-white/15 rounded-xl px-3 py-2">
+            <span>🏆</span>
+            <span className="text-sm font-medium">
+              {perfectStreak >= 30 ? '¡Un mes perfecto!' : perfectStreak >= 14 ? '¡Dos semanas perfectas!' : '¡Una semana perfecta!'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* f) Weekly Trend Chart - Last 8 weeks */}
+      <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+        <h3 className="font-bold text-gray-700 mb-1 text-sm">📊 Tendencia semanal</h3>
+        <p className="text-xs text-gray-400 mb-3">Últimas 8 semanas</p>
+        <div className="flex items-end gap-1.5" style={{ height: '140px' }}>
+          {weeklyTrendData.map((week, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <span className="text-[9px] font-bold text-gray-500">{week.rate}%</span>
+              <div className="w-full relative" style={{ height: '100px' }}>
+                <div
+                  className="absolute bottom-0 w-full rounded-t-lg transition-all duration-500"
+                  style={{
+                    height: `${Math.max(4, week.rate)}%`,
+                    backgroundColor: getBarColor(week.rate),
+                    minHeight: '4px',
+                  }}
+                />
+              </div>
+              <span className="text-[8px] font-medium text-gray-400">{week.label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-4 mt-3 pt-2 border-t border-gray-100">
+          <div className="flex items-center gap-1">
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: DUO_GREEN }} />
+            <span className="text-[9px] text-gray-400">≥80%</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: DUO_YELLOW }} />
+            <span className="text-[9px] text-gray-400">≥50%</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: DUO_ORANGE }} />
+            <span className="text-[9px] text-gray-400">≥25%</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: DUO_RED }} />
+            <span className="text-[9px] text-gray-400">&lt;25%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== EXISTING STATS (kept from original) ===== */}
+
       {/* Level & XP Card */}
       <div className="bg-gradient-to-br from-duo-green to-green-600 rounded-2xl p-5 text-white shadow-lg">
         <div className="flex items-center justify-between mb-2">
@@ -811,6 +1130,124 @@ function StatsScreen({ userData }: { userData: UserData }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ===== DATA IMPORT BUTTON =====
+function DataImportButton({ setUserData }: { setUserData: React.Dispatch<React.SetStateAction<UserData>> }) {
+  const [showImportConfirm, setShowImportConfirm] = useState(false)
+  const [importError, setImportError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const validateUserData = (data: unknown): data is UserData => {
+    if (!data || typeof data !== 'object') return false
+    const d = data as Record<string, unknown>
+    if (!Array.isArray(d.habits)) return false
+    if (typeof d.totalXP !== 'number') return false
+    // Basic structure check
+    return true
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportError('')
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string)
+        if (!validateUserData(parsed)) {
+          setImportError('El archivo no tiene el formato correcto de HabitDuo')
+          setShowImportConfirm(false)
+          return
+        }
+        // Store parsed data for confirmation
+        setShowImportConfirm(true)
+        ;(window as unknown as Record<string, unknown>).__habitduoImportData = parsed
+      } catch {
+        setImportError('No se pudo leer el archivo. Asegúrate de que es un JSON válido.')
+        setShowImportConfirm(false)
+      }
+    }
+    reader.readAsText(file)
+    // Reset file input so the same file can be selected again
+    e.target.value = ''
+  }
+
+  const confirmImport = () => {
+    const importData = (window as unknown as Record<string, unknown>).__habitduoImportData as UserData
+    if (!importData) return
+    // Merge with defaults for any missing fields
+    const defaults = getDefaultUserData()
+    const merged: UserData = {
+      ...defaults,
+      ...importData,
+      habits: importData.habits || defaults.habits,
+      streakFreezeUsed: importData.streakFreezeUsed || {},
+      journalEntries: importData.journalEntries || {},
+    }
+    saveData(merged)
+    setUserData(merged)
+    setShowImportConfirm(false)
+    // Reload page so data takes effect everywhere
+    setTimeout(() => window.location.reload(), 300)
+  }
+
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleFileSelect}
+        className="hidden"
+        aria-label="Seleccionar archivo de respaldo"
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="w-full py-3 rounded-xl bg-duo-blue text-white font-bold text-sm transition-all active:scale-95 hover:bg-duo-blue/90"
+        style={{ boxShadow: '0 4px 0 #1890d0' }}
+      >
+        📥 Importar datos
+      </button>
+      {importError && (
+        <p className="text-xs text-red-500 mt-1">{importError}</p>
+      )}
+
+      {/* Import confirmation dialog */}
+      {showImportConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setShowImportConfirm(false)}>
+          <div
+            className="bg-white rounded-3xl p-6 text-center animate-bounce-in max-w-xs w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-4xl mb-3">⚠️</div>
+            <h2 className="text-lg font-black text-gray-800 mb-2">¿Importar datos?</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Esto reemplazará todos tus datos actuales con los del archivo importado. Esta acción no se puede deshacer.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowImportConfirm(false)
+                  ;(window as unknown as Record<string, unknown>).__habitduoImportData = null
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-gray-200 text-gray-600 font-bold text-sm active:scale-95 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmImport}
+                className="flex-1 py-2.5 rounded-xl bg-duo-blue text-white font-bold text-sm active:scale-95 transition-all"
+              >
+                Importar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -955,6 +1392,36 @@ function SettingsScreen({
         </div>
       </div>
 
+      {/* Data Backup */}
+      <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
+        <h3 className="font-bold text-gray-700 mb-2 text-sm">💾 Respaldo de datos</h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Exporta tus datos para respaldarlos o impórtalos para restaurarlos en otro dispositivo.
+        </p>
+        <div className="space-y-2">
+          <button
+            onClick={() => {
+              const dataStr = JSON.stringify(userData, null, 2)
+              const blob = new Blob([dataStr], { type: 'application/json' })
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement('a')
+              const today = getTodayStr()
+              a.href = url
+              a.download = `habitduo-backup-${today}.json`
+              document.body.appendChild(a)
+              a.click()
+              document.body.removeChild(a)
+              URL.revokeObjectURL(url)
+            }}
+            className="w-full py-3 rounded-xl bg-duo-green text-white font-bold text-sm transition-all active:scale-95 hover:bg-duo-green/90"
+            style={{ boxShadow: `0 4px 0 ${DUO_GREEN_DARK}` }}
+          >
+            📤 Exportar datos
+          </button>
+          <DataImportButton setUserData={setUserData} />
+        </div>
+      </div>
+
       {/* Reset */}
       <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
         <h3 className="font-bold text-gray-700 mb-2 text-sm">⚠️ Zona peligrosa</h3>
@@ -992,7 +1459,7 @@ function SettingsScreen({
         <p className="font-bold text-gray-700">HabitDuo</p>
         <p className="text-xs text-gray-400">Tu rastreador de hábitos gamificado</p>
         <div className="mt-2 pt-2 border-t border-gray-100">
-          <p className="text-[10px] text-gray-300">v1.1.0</p>
+          <p className="text-[10px] text-gray-300">v1.2.0</p>
           <p className="text-[10px] text-gray-400 mt-1">💾 Tus datos se guardan localmente en este navegador (localStorage). Si borras los datos del navegador se perderán.</p>
         </div>
       </div>
@@ -1766,9 +2233,9 @@ export default function Home() {
           </div>
         )}
 
-        {activeTab === 'stats' && (
+        {activeTab === 'insights' && (
           <>
-            <StatsScreen userData={userData} />
+            <InsightsScreen userData={userData} />
             <JournalHistory journalEntries={userData.journalEntries} />
           </>
         )}
@@ -1797,7 +2264,7 @@ export default function Home() {
         <div className="flex items-center justify-around py-1.5 px-2">
           {([
             { id: 'home' as Tab, emoji: '🏠', label: 'Inicio' },
-            { id: 'stats' as Tab, emoji: '📊', label: 'Estadísticas' },
+            { id: 'insights' as Tab, emoji: '📊', label: 'Insights' },
             { id: 'settings' as Tab, emoji: '⚙️', label: 'Ajustes' },
           ] as const).map((tab) => (
             <button
