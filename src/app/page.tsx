@@ -13,6 +13,7 @@ interface Habit {
   streak: number
   bestStreak: number
   completions: Record<string, boolean>
+  skippedDays: Record<string, boolean>
   createdAt: string
   xpPerCompletion: number
 }
@@ -113,18 +114,44 @@ function getXPForLevel(level: number): number {
 }
 
 // ===== SMART STREAK HELPERS =====
-// A weekly habit is "satisfied" for a day if: completed today OR weekly target already met this week
+
+// Calculate remaining days in the week AFTER a given date (not including that date)
+function getDaysRemainingInWeek(dateStr: string): number {
+  const date = new Date(dateStr + 'T12:00:00')
+  const dayOfWeek = date.getDay() // 0=Sun, 1=Mon, ...
+  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek
+  return daysUntilSunday
+}
+
+// Can a weekly habit be deferred ("Lo hago mañana") for a given date?
+function canDeferHabit(habit: Habit, dateStr: string): boolean {
+  if (habit.frequency !== 'weekly') return false
+  if (habit.completions[dateStr]) return false // Already completed today
+  const date = new Date(dateStr + 'T12:00:00')
+  const weekDates = getWeekDatesForDate(date)
+  const weekCompletions = weekDates.filter((d) => habit.completions[d]).length
+  if (weekCompletions >= habit.weeklyTarget) return false // Target already met
+  const remainingNeeded = habit.weeklyTarget - weekCompletions
+  const daysRemaining = getDaysRemainingInWeek(dateStr) // Days AFTER today
+  return remainingNeeded <= daysRemaining
+}
+
+// A weekly habit is "satisfied" for a day if: completed, target met, OR still has margin to complete
 function isHabitSatisfiedForDay(habit: Habit, dateStr: string): boolean {
   if (habit.frequency === 'daily') {
     return !!habit.completions[dateStr]
   }
-  // Weekly: satisfied if completed today OR weekly target already met this week
+  // Weekly: satisfied if completed today
   if (habit.completions[dateStr]) return true
-  // Use the correct week for the given date (not always current week)
+  // Weekly: satisfied if target already met this week
   const date = new Date(dateStr + 'T12:00:00')
   const weekDates = getWeekDatesForDate(date)
   const weekCompletions = weekDates.filter((d) => habit.completions[d]).length
-  return weekCompletions >= habit.weeklyTarget
+  if (weekCompletions >= habit.weeklyTarget) return true
+  // Weekly: satisfied if still has margin (remaining needed <= remaining days including today)
+  const remainingNeeded = habit.weeklyTarget - weekCompletions
+  const daysRemainingIncludingToday = getDaysRemainingInWeek(dateStr) + 1
+  return remainingNeeded <= daysRemainingIncludingToday
 }
 
 // A day is "complete" for streak purposes if all habits are satisfied
@@ -154,6 +181,7 @@ function getDefaultHabits(): Habit[] {
       streak: 0,
       bestStreak: 0,
       completions: {},
+      skippedDays: {},
       createdAt: getTodayStr(),
       xpPerCompletion: 25,
     },
@@ -167,6 +195,7 @@ function getDefaultHabits(): Habit[] {
       streak: 0,
       bestStreak: 0,
       completions: {},
+      skippedDays: {},
       createdAt: getTodayStr(),
       xpPerCompletion: 25,
     },
@@ -180,6 +209,7 @@ function getDefaultHabits(): Habit[] {
       streak: 0,
       bestStreak: 0,
       completions: {},
+      skippedDays: {},
       createdAt: getTodayStr(),
       xpPerCompletion: 10,
     },
@@ -193,6 +223,7 @@ function getDefaultHabits(): Habit[] {
       streak: 0,
       bestStreak: 0,
       completions: {},
+      skippedDays: {},
       createdAt: getTodayStr(),
       xpPerCompletion: 10,
     },
@@ -230,7 +261,12 @@ function loadData(): UserData {
     return {
       ...defaults,
       ...data,
-      habits: data.habits || defaults.habits,
+      habits: (data.habits || defaults.habits).map((h) => ({
+        ...defaults.habits[0],
+        skippedDays: {},
+        ...h,
+        skippedDays: h.skippedDays || {},
+      })),
       streakFreezeUsed: data.streakFreezeUsed || {},
       journalEntries: data.journalEntries || {},
     }
@@ -332,13 +368,17 @@ function HabitCard({
   habit,
   todayStr,
   onComplete,
+  onSkip,
   isCompleted,
+  isSkipped,
   celebratingId,
 }: {
   habit: Habit
   todayStr: string
   onComplete: (id: string) => void
+  onSkip: (id: string) => void
   isCompleted: boolean
+  isSkipped: boolean
   celebratingId: string | null
 }) {
   const weekDates = getWeekDates()
@@ -347,41 +387,63 @@ function HabitCard({
 
   // Smart streak: is this habit "needed" today for the streak?
   const isWeeklyTargetMet = habit.frequency === 'weekly' && weekCompletions >= habit.weeklyTarget
-  const isNeededToday = habit.frequency === 'daily' || !isWeeklyTargetMet
+  const canDefer = canDeferHabit(habit, todayStr)
+  const isUrgent = habit.frequency === 'weekly' && !isCompleted && !isWeeklyTargetMet && !canDefer
+  // Has margin: weekly, not completed, target not met, but can still defer
+  const hasMargin = habit.frequency === 'weekly' && !isCompleted && !isWeeklyTargetMet && canDefer
   const isOptionalToday = habit.frequency === 'weekly' && isWeeklyTargetMet && !isCompleted
+
+  // Urgency indicator for weekly habits
+  const remainingNeeded = habit.frequency === 'weekly' ? habit.weeklyTarget - weekCompletions : 0
+  const daysLeftInWeek = (() => {
+    const dayOfWeek = new Date(todayStr + 'T12:00:00').getDay()
+    return dayOfWeek === 0 ? 0 : 7 - dayOfWeek // days AFTER today
+  })()
 
   return (
     <div
-      className="animate-slide-up rounded-2xl bg-white shadow-md border border-gray-100 overflow-hidden"
+      className={`animate-slide-up rounded-2xl bg-white shadow-md border overflow-hidden transition-all duration-300 ${
+        isSkipped ? 'border-gray-200 opacity-75' : isUrgent ? 'border-orange-200' : 'border-gray-100'
+      }`}
       style={{ animationDelay: `${Math.random() * 0.15}s` }}
     >
       {/* Color accent bar */}
-      <div className="h-1.5" style={{ backgroundColor: habit.color }} />
+      <div className="h-1.5" style={{ backgroundColor: isSkipped ? '#D1D5DB' : habit.color }} />
 
       <div className="p-4">
         {/* Header: emoji + name + streak */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
-            <span className="text-3xl" role="img" aria-label={habit.name}>
+            <span className={`text-3xl transition-all ${isSkipped ? 'grayscale opacity-50' : ''}`} role="img" aria-label={habit.name}>
               {habit.emoji}
             </span>
             <div>
-              <h3 className="font-bold text-base text-gray-800">{habit.name}</h3>
-              <div className="flex items-center gap-2">
+              <h3 className={`font-bold text-base ${isSkipped ? 'text-gray-400' : 'text-gray-800'}`}>{habit.name}</h3>
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-xs text-gray-400">
                   {habit.frequency === 'daily' ? 'Todos los días' : `Mín. ${habit.weeklyTarget}/semana`}
                 </p>
+                {isSkipped && (
+                  <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                    → Mañana
+                  </span>
+                )}
                 {isOptionalToday && (
                   <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
                     ✓ Meta cumplida
                   </span>
                 )}
-                {isNeededToday && !isCompleted && habit.frequency === 'weekly' && (
-                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">
-                    Necesario hoy
+                {isUrgent && (
+                  <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full animate-pulse">
+                    ⚠️ Urgente hoy
                   </span>
                 )}
-                {isNeededToday && !isCompleted && habit.frequency === 'daily' && (
+                {hasMargin && !isSkipped && (
+                  <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+                    {remainingNeeded} en {daysLeftInWeek + 1} días
+                  </span>
+                )}
+                {!isCompleted && habit.frequency === 'daily' && (
                   <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
                     Necesario hoy
                   </span>
@@ -405,24 +467,24 @@ function HabitCard({
           <div className="mb-3">
             <div className="flex justify-between text-xs text-gray-400 mb-1">
               <span>Progreso semanal</span>
-              <span className="font-bold" style={{ color: weekCompletions >= habit.weeklyTarget ? DUO_GREEN : habit.color }}>
+              <span className="font-bold" style={{ color: weekCompletions >= habit.weeklyTarget ? DUO_GREEN : isUrgent ? DUO_RED : habit.color }}>
                 {weekCompletions}/{habit.weeklyTarget} {weekCompletions >= habit.weeklyTarget ? '✓' : ''}
               </span>
             </div>
             <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden relative">
-              {/* Minimum target marker */}
-              <div
-                className="absolute top-0 h-full w-0.5 bg-gray-400/50 z-10"
-                style={{ left: '100%' }}
-              />
               <div
                 className="h-full rounded-full transition-all duration-500 ease-out"
                 style={{
                   width: `${Math.min(100, (weekCompletions / habit.weeklyTarget) * 100)}%`,
-                  backgroundColor: weekCompletions >= habit.weeklyTarget ? DUO_GREEN : habit.color,
+                  backgroundColor: weekCompletions >= habit.weeklyTarget ? DUO_GREEN : isUrgent ? DUO_RED : habit.color,
                 }}
               />
             </div>
+            {isUrgent && (
+              <p className="text-[10px] text-red-500 font-bold mt-1">
+                ¡Te quedan {daysLeftInWeek + 1} día{daysLeftInWeek + 1 !== 1 ? 's' : ''} y necesitás {remainingNeeded}!
+              </p>
+            )}
             {weekCompletions >= habit.weeklyTarget && (
               <p className="text-[10px] text-duo-green font-bold mt-1">
                 {weekCompletions === habit.weeklyTarget ? '¡Meta alcanzada!' : `¡${weekCompletions - habit.weeklyTarget} extra! 🌟`}
@@ -431,37 +493,62 @@ function HabitCard({
           </div>
         )}
 
-        {/* Complete button */}
-        <div className="relative">
-          {isCelebrating && <XPPopup xp={habit.xpPerCompletion} onDone={() => {}} />}
-          <button
-            onClick={() => !isCompleted && onComplete(habit.id)}
-            className={`w-full py-3 rounded-xl font-bold text-base transition-all duration-200 active:scale-95 ${
-              isCompleted
-                ? 'bg-duo-green/10 text-duo-green border-2 border-duo-green/30'
-                : 'text-white shadow-lg hover:shadow-xl active:shadow-md'
-            }`}
-            style={
-              !isCompleted
-                ? {
-                    backgroundColor: habit.color,
-                    boxShadow: `0 4px 0 ${habit.color}dd, 0 6px 12px ${habit.color}33`,
-                  }
-                : {}
-            }
-            disabled={isCompleted}
-            aria-label={isCompleted ? `${habit.name} completado` : `Completar ${habit.name}`}
-          >
-            {isCompleted ? (
+        {/* Buttons */}
+        {isSkipped ? (
+          <div className="flex gap-2">
+            <button
+              onClick={() => onComplete(habit.id)}
+              className="flex-1 py-3 rounded-xl font-bold text-base transition-all duration-200 active:scale-95 text-white shadow-lg hover:shadow-xl"
+              style={{
+                backgroundColor: habit.color,
+                boxShadow: `0 4px 0 ${habit.color}dd, 0 6px 12px ${habit.color}33`,
+              }}
+              aria-label={`Completar ${habit.name}`}
+            >
+              COMPLETAR
+            </button>
+            <div className="flex items-center justify-center px-4 rounded-xl bg-gray-100 text-gray-400 text-sm font-medium">
+              → Mañana
+            </div>
+          </div>
+        ) : isCompleted ? (
+          <div className="relative">
+            {isCelebrating && <XPPopup xp={habit.xpPerCompletion} onDone={() => {}} />}
+            <button
+              className="w-full py-3 rounded-xl font-bold text-base bg-duo-green/10 text-duo-green border-2 border-duo-green/30"
+              disabled
+              aria-label={`${habit.name} completado`}
+            >
               <span className="flex items-center justify-center gap-2">
                 <span className="animate-bounce-in inline-block">✓</span>
                 ¡Completado!
               </span>
-            ) : (
-              'COMPLETAR'
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => onComplete(habit.id)}
+              className="flex-1 py-3 rounded-xl font-bold text-base transition-all duration-200 active:scale-95 text-white shadow-lg hover:shadow-xl active:shadow-md"
+              style={{
+                backgroundColor: habit.color,
+                boxShadow: `0 4px 0 ${habit.color}dd, 0 6px 12px ${habit.color}33`,
+              }}
+              aria-label={`Completar ${habit.name}`}
+            >
+              COMPLETAR
+            </button>
+            {canDefer && (
+              <button
+                onClick={() => onSkip(habit.id)}
+                className="py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 active:scale-95 bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200"
+                aria-label={`Posponer ${habit.name} para mañana`}
+              >
+                → Mañana
+              </button>
             )}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -514,7 +601,7 @@ function WeeklyOverview({ habits }: { habits: Habit[] }) {
         })}
       </div>
       <p className="text-[9px] text-gray-400 mt-2 text-center">
-        ✓ = Día completo (diarios hechos + semanales al día)
+        ✓ = Día al día (diarios + semanales con margen o cumplidos)
       </p>
     </div>
   )
@@ -1080,7 +1167,7 @@ function InsightsScreen({ userData }: { userData: UserData }) {
             <p className="text-white/70 text-xs font-medium">RACHA ACTUAL</p>
             <p className="text-4xl font-black">{userData.globalStreak}</p>
             <p className="text-white/70 text-xs">días cumpliendo lo necesario</p>
-            <p className="text-white/50 text-[10px] mt-0.5">Diarios: todos los días · Semanales: mínimo semanal</p>
+            <p className="text-white/50 text-[10px] mt-0.5">Diarios: cada día · Semanales: con margen o cumplidos</p>
           </div>
           <div className="text-5xl animate-fire-dance">🔥</div>
           <div className="text-right">
@@ -1962,8 +2049,10 @@ export default function Home() {
       // Already completed today
       if (habit.completions[today]) return prev
 
-      // Mark completed
+      // Mark completed (and remove skip if it was skipped)
       const newCompletions = { ...habit.completions, [today]: true }
+      const newSkippedDays = { ...habit.skippedDays }
+      delete newSkippedDays[today]
 
       // Calculate new streak
       let newStreak = habit.streak + 1
@@ -1990,6 +2079,7 @@ export default function Home() {
       const updatedHabit = {
         ...habit,
         completions: newCompletions,
+        skippedDays: newSkippedDays,
         streak: newStreak,
         bestStreak: newBestStreak,
       }
@@ -2057,6 +2147,54 @@ export default function Home() {
     }, 1500)
   }, [])
 
+  // Skip a weekly habit for today ("Lo hago mañana")
+  const skipHabit = useCallback((habitId: string) => {
+    setUserData((prev) => {
+      const today = getTodayStr()
+      const habitIndex = prev.habits.findIndex((h) => h.id === habitId)
+      if (habitIndex === -1) return prev
+      const habit = prev.habits[habitIndex]
+
+      // Only weekly habits can be skipped, and only if they can be deferred
+      if (habit.frequency !== 'weekly') return prev
+      if (!canDeferHabit(habit, today)) return prev
+      if (habit.completions[today]) return prev // Already completed
+      if (habit.skippedDays[today]) return prev // Already skipped
+
+      const newHabits = [...prev.habits]
+      newHabits[habitIndex] = {
+        ...habit,
+        skippedDays: { ...habit.skippedDays, [today]: true },
+      }
+
+      // Smart streak: check if all habits are satisfied after skip
+      const dayComplete = isDayCompleteForStreak(newHabits, today)
+      const yesterday = getYesterdayStr()
+      let newGlobalStreak = prev.globalStreak
+      if (dayComplete) {
+        if (prev.lastStreakDate === yesterday || prev.lastStreakDate === today) {
+          if (prev.lastStreakDate !== today) {
+            newGlobalStreak = prev.globalStreak + 1
+          }
+        } else if (prev.lastStreakDate === '') {
+          newGlobalStreak = 1
+        } else {
+          newGlobalStreak = 1
+        }
+      }
+
+      const next: UserData = {
+        ...prev,
+        habits: newHabits,
+        globalStreak: newGlobalStreak,
+        bestGlobalStreak: Math.max(prev.bestGlobalStreak, newGlobalStreak),
+        lastStreakDate: dayComplete ? today : prev.lastStreakDate,
+      }
+
+      return next
+    })
+  }, [])
+
   // Add habit
   const addHabit = useCallback((habitData: Partial<Habit>) => {
     setUserData((prev) => {
@@ -2070,6 +2208,7 @@ export default function Home() {
         streak: 0,
         bestStreak: 0,
         completions: {},
+        skippedDays: {},
         createdAt: getTodayStr(),
         xpPerCompletion: habitData.xpPerCompletion || 10,
       }
@@ -2303,7 +2442,9 @@ export default function Home() {
                   habit={habit}
                   todayStr={today}
                   onComplete={completeHabit}
+                  onSkip={skipHabit}
                   isCompleted={!!habit.completions[today]}
+                  isSkipped={!!habit.skippedDays?.[today]}
                   celebratingId={celebratingId}
                 />
               ))}
