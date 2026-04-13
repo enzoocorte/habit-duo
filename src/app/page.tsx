@@ -78,10 +78,13 @@ function getYesterdayStr(): string {
 }
 
 function getWeekDates(): string[] {
-  const today = new Date()
-  const dayOfWeek = today.getDay()
-  const monday = new Date(today)
-  monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7))
+  return getWeekDatesForDate(new Date())
+}
+
+function getWeekDatesForDate(date: Date): string[] {
+  const dayOfWeek = date.getDay()
+  const monday = new Date(date)
+  monday.setDate(date.getDate() - ((dayOfWeek + 6) % 7))
   const dates: string[] = []
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday)
@@ -115,9 +118,11 @@ function isHabitSatisfiedForDay(habit: Habit, dateStr: string): boolean {
   if (habit.frequency === 'daily') {
     return !!habit.completions[dateStr]
   }
-  // Weekly: satisfied if completed today OR weekly target already met
+  // Weekly: satisfied if completed today OR weekly target already met this week
   if (habit.completions[dateStr]) return true
-  const weekDates = getWeekDates()
+  // Use the correct week for the given date (not always current week)
+  const date = new Date(dateStr + 'T12:00:00')
+  const weekDates = getWeekDatesForDate(date)
   const weekCompletions = weekDates.filter((d) => habit.completions[d]).length
   return weekCompletions >= habit.weeklyTarget
 }
@@ -473,17 +478,22 @@ function WeeklyOverview({ habits }: { habits: Habit[] }) {
       <div className="grid grid-cols-7 gap-1.5">
         {weekDates.map((day, i) => {
           const isCurrentDay = day === today
+          // Smart logic: count habits that are actually completed vs satisfied for streak
           const completedCount = habits.filter((h) => h.completions[day]).length
+          const satisfiedCount = habits.filter((h) => isHabitSatisfiedForDay(h, day)).length
           const totalForDay = habits.length
-          const allDone = completedCount === totalForDay && totalForDay > 0
-          const someDone = completedCount > 0 && !allDone
+          // A day is "all done" when all habits are satisfied (smart streak logic)
+          const allSatisfied = satisfiedCount === totalForDay && totalForDay > 0
+          const allActuallyCompleted = completedCount === totalForDay && totalForDay > 0
+          const someSatisfied = satisfiedCount > 0 && !allSatisfied
           const isFuture = day > today
 
           let bgColor = 'bg-gray-200'
           let textColor = 'text-gray-400'
           if (!isFuture) {
-            if (allDone) { bgColor = 'bg-duo-green'; textColor = 'text-white' }
-            else if (someDone) { bgColor = 'bg-duo-yellow'; textColor = 'text-yellow-800' }
+            if (allActuallyCompleted) { bgColor = 'bg-duo-green'; textColor = 'text-white' }
+            else if (allSatisfied) { bgColor = 'bg-emerald-400'; textColor = 'text-white' }
+            else if (someSatisfied) { bgColor = 'bg-duo-yellow'; textColor = 'text-yellow-800' }
             else { bgColor = 'bg-red-100'; textColor = 'text-red-400' }
           }
 
@@ -497,12 +507,15 @@ function WeeklyOverview({ habits }: { habits: Habit[] }) {
                   isCurrentDay ? 'ring-2 ring-duo-green ring-offset-1' : ''
                 }`}
               >
-                {allDone && !isFuture ? '✓' : someDone ? `${completedCount}` : isFuture ? '' : '·'}
+                {allActuallyCompleted && !isFuture ? '✓' : allSatisfied && !isFuture ? '✓' : someSatisfied ? `${satisfiedCount}` : isFuture ? '' : '·'}
               </div>
             </div>
           )
         })}
       </div>
+      <p className="text-[9px] text-gray-400 mt-2 text-center">
+        ✓ = Día completo (diarios hechos + semanales al día)
+      </p>
     </div>
   )
 }
@@ -1067,6 +1080,7 @@ function InsightsScreen({ userData }: { userData: UserData }) {
             <p className="text-white/70 text-xs font-medium">RACHA ACTUAL</p>
             <p className="text-4xl font-black">{userData.globalStreak}</p>
             <p className="text-white/70 text-xs">días cumpliendo lo necesario</p>
+            <p className="text-white/50 text-[10px] mt-0.5">Diarios: todos los días · Semanales: mínimo semanal</p>
           </div>
           <div className="text-5xl animate-fire-dance">🔥</div>
           <div className="text-right">
