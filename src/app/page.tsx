@@ -38,6 +38,7 @@ interface UserData {
   lastStreakDate: string
   streakFreezeUsed: Record<string, boolean>
   journalEntries: Record<string, JournalEntry>
+  swRegistered: boolean
 }
 
 type Tab = 'home' | 'insights' | 'settings'
@@ -57,6 +58,39 @@ const STORAGE_KEY = 'habitduo-data'
 const DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const DAY_NAMES_FULL = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+// ===== DUOLINGO-STYLE NOTIFICATION MESSAGES =====
+const MORNING_MESSAGES = [
+  { title: 'HabitDuo ☀️', body: '¡Buenos días! Tus hábitos te esperan. ¡No los defraudes! 💪' },
+  { title: '🔥 Tu racha te extraña', body: '¡Levantate y completá tus hábitos! Solo toma 5 minutos.' },
+  { title: 'HabitDuo 🌅', body: 'Un nuevo día, una nueva oportunidad de ser mejor. ¡Vamos!' },
+  { title: '💪 ¡Es hora!', body: 'Tus hábitos no se van a hacer solos. ¡Dale que dale!' },
+  { title: 'HabitDuo 🎯', body: '¡Hoy es el día perfecto para cumplir todos tus hábitos!' },
+  { title: '⏰ Recordá...', body: 'Los que tienen racha larga empezaron con un día. ¡Empezá hoy!' },
+  { title: '🔥 La racha espera', body: '¡Cada día sin completar es un día perdido! Vamos 💪' },
+  { title: 'HabitDuo 🏆', body: '¡Los campeones se entrenan cuando nadie los ve! Hacé tus hábitos.' },
+]
+
+const EVENING_MESSAGES = [
+  { title: '⚠️ ¡Cuidado con la racha!', body: '¡Todavía tenés hábitos pendientes! No dejes que se apague el fuego 🔥' },
+  { title: '🔥 Se apaga la racha...', body: '¡Quedan hábitos por completar! ¡Salvala ahora!' },
+  { title: 'HabitDuo 🌙', body: '¡No te vayas a dormir sin completar! Tu yo del futuro te lo agradece.' },
+  { title: '😰 Tu racha está en peligro', body: '¡Quedan pocos hábitos! Hacelos ahora, toma 2 minutos.' },
+  { title: 'HabitDuo 🛡️', body: '¡No pierdas lo que construiste! Completá tus hábitos antes de dormir.' },
+  { title: '⏰ Última chance', body: '¡El día se acaba y tus hábitos te esperan! ¡Dale! 💪' },
+  { title: '🌙 ¿Ya completaste todo?', body: '¡Revisá tus hábitos! No quieras dormir con culpa 😤' },
+  { title: '🔥 La racha no perdona', body: '¡Si no completás hoy, mañana empezás de cero! Vamos 💪' },
+]
+
+const URGENT_MESSAGES = [
+  { title: '🚨 ¡ÚLTIMA CHANCE!', body: '¡Tu racha va a MORIR si no completás ahora! ¡No seas vago! 😤🔥' },
+  { title: '💀 ¡SE ACABA EL TIEMPO!', body: '¡Completá tus hábitos AHORA o perdés tu racha de fuego! 🔥' },
+  { title: '⚠️ ¡EMERGENCIA!', body: '¡Quedan minutos! ¡Tus hábitos te necesitan! ¡MOVERSE! 🏃💨' },
+]
+
+function getRandomMessage(messages: { title: string; body: string }[]): { title: string; body: string } {
+  return messages[Math.floor(Math.random() * messages.length)]
+}
 
 // ===== UTILITY FUNCTIONS =====
 function generateId(): string {
@@ -246,6 +280,7 @@ function getDefaultUserData(): UserData {
     lastStreakDate: '',
     streakFreezeUsed: {},
     journalEntries: {},
+    swRegistered: false,
   }
 }
 
@@ -269,6 +304,7 @@ function loadData(): UserData {
       })),
       streakFreezeUsed: data.streakFreezeUsed || {},
       journalEntries: data.journalEntries || {},
+      swRegistered: data.swRegistered || false,
     }
   } catch {
     return getDefaultUserData()
@@ -1417,60 +1453,95 @@ function SettingsScreen({
     <div className="animate-tab-enter space-y-4 pb-6">
       {/* Notifications */}
       <div className="bg-white rounded-2xl shadow-md p-4 border border-gray-100">
-        <h3 className="font-bold text-gray-700 mb-3 text-sm">🔔 Notificaciones</h3>
+        <h3 className="font-bold text-gray-700 mb-3 text-sm">🔔 Notificaciones estilo Duolingo</h3>
+        <p className="text-xs text-gray-400 mb-3">Recordatorios intensos para que no escapes de tus hábitos</p>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-700">Activar notificaciones</p>
-              <p className="text-xs text-gray-400">Recibe recordatorios diarios</p>
+              <p className="text-xs text-gray-400">Mañana, noche y urgente antes de medianoche</p>
             </div>
             <button
               onClick={onRequestNotification}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95 ${
                 userData.notificationEnabled
                   ? 'bg-duo-green text-white'
-                  : 'bg-gray-200 text-gray-500'
+                  : 'bg-orange-400 text-white shadow-md'
               }`}
             >
-              {userData.notificationEnabled ? '✓ Activado' : 'Activar'}
+              {userData.notificationEnabled ? '✓ Activado' : '🔔 Activar'}
             </button>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Recordatorio mañana</p>
-              <p className="text-xs text-gray-400">Recordatorio de la mañana</p>
+
+          {userData.notificationEnabled && (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">☀️ Recordatorio mañana</p>
+                  <p className="text-xs text-gray-400">Empezá el día bien</p>
+                </div>
+                <input
+                  type="time"
+                  value={userData.morningReminderTime}
+                  onChange={(e) => {
+                    setUserData((prev) => {
+                      const next = { ...prev, morningReminderTime: e.target.value }
+                      saveData(next)
+                      return next
+                    })
+                  }}
+                  className="bg-gray-100 rounded-lg px-2 py-1 text-sm border-0 focus:ring-2 focus:ring-duo-green"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">🌙 Recordatorio noche</p>
+                  <p className="text-xs text-gray-400">Antes de que se acabe el día</p>
+                </div>
+                <input
+                  type="time"
+                  value={userData.eveningReminderTime}
+                  onChange={(e) => {
+                    setUserData((prev) => {
+                      const next = { ...prev, eveningReminderTime: e.target.value }
+                      saveData(next)
+                      return next
+                    })
+                  }}
+                  className="bg-gray-100 rounded-lg px-2 py-1 text-sm border-0 focus:ring-2 focus:ring-duo-green"
+                />
+              </div>
+              <div className="p-3 rounded-xl bg-orange-50 border border-orange-100">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm">🚨</span>
+                  <p className="text-xs font-bold text-orange-600">Recordatorio urgente: 23:30</p>
+                </div>
+                <p className="text-[10px] text-orange-400">Si te quedan hábitos pendientes a las 23:30, te mandamos una notificación intensa. No vas a poder ignorarla.</p>
+              </div>
+              <div className="p-3 rounded-xl bg-blue-50 border border-blue-100">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm">💪</span>
+                  <p className="text-xs font-bold text-blue-600">Nudge cada 45 min</p>
+                </div>
+                <p className="text-[10px] text-blue-400">Si ya completaste algunos pero faltan otros, te recordamos los que quedan. Como Duolingo, pero para hábitos.</p>
+              </div>
+            </>
+          )}
+
+          {!userData.notificationEnabled && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-100">
+              <p className="text-xs text-red-600 font-bold">⚠️ Sin notificaciones vas a perder la racha</p>
+              <p className="text-[10px] text-red-400 mt-1">Las notificaciones son la clave para mantener hábitos. Duolingo lo sabe, por eso son tan intensas.</p>
             </div>
-            <input
-              type="time"
-              value={userData.morningReminderTime}
-              onChange={(e) => {
-                setUserData((prev) => {
-                  const next = { ...prev, morningReminderTime: e.target.value }
-                  saveData(next)
-                  return next
-                })
-              }}
-              className="bg-gray-100 rounded-lg px-2 py-1 text-sm border-0 focus:ring-2 focus:ring-duo-green"
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-700">Recordatorio noche</p>
-              <p className="text-xs text-gray-400">Si quedan hábitos pendientes</p>
+          )}
+
+          {userData.swRegistered && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-duo-green font-bold">✓ Service Worker activo</span>
+              <span className="text-[10px] text-gray-300">|</span>
+              <span className="text-[10px] text-gray-400">Notificaciones funcionan en segundo plano</span>
             </div>
-            <input
-              type="time"
-              value={userData.eveningReminderTime}
-              onChange={(e) => {
-                setUserData((prev) => {
-                  const next = { ...prev, eveningReminderTime: e.target.value }
-                  saveData(next)
-                  return next
-                })
-              }}
-              className="bg-gray-100 rounded-lg px-2 py-1 text-sm border-0 focus:ring-2 focus:ring-duo-green"
-            />
-          </div>
+          )}
         </div>
       </div>
 
@@ -1958,85 +2029,199 @@ export default function Home() {
   const [showHabitForm, setShowHabitForm] = useState(false)
   const [editHabit, setEditHabit] = useState<Habit | null>(null)
   const [streakMilestone, setStreakMilestone] = useState<number | null>(null)
-  const notificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const notificationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   // Save data whenever userData changes
   useEffect(() => {
     saveData(userData)
   }, [userData])
 
-  // Schedule notifications
+  // ===== SERVICE WORKER REGISTRATION =====
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        console.log('✅ Service Worker registered:', reg.scope)
+        setUserData((prev) => {
+          if (prev.swRegistered) return prev
+          const next = { ...prev, swRegistered: true }
+          saveData(next)
+          return next
+        })
+      }).catch((err) => {
+        console.log('⚠️ Service Worker registration failed:', err)
+      })
+    }
+  }, [])
+
+  // ===== SMART NOTIFICATION SYSTEM =====
+  const sendNotification = useCallback((title: string, body: string, tag: string, urgent = false) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+
+    const options: NotificationOptions = {
+      body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag,
+      renotify: true,
+      requireInteraction: urgent,
+      vibrate: urgent ? [300, 100, 300, 100, 300, 100, 300] : [200, 100, 200],
+      silent: false,
+      data: { url: '/' },
+    }
+
+    // Try Service Worker notification (works when app is in background)
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.showNotification(title, options)
+      })
+    } else {
+      // Fallback to regular notification
+      new Notification(title, options)
+    }
+
+    // Also try to vibrate the device directly
+    if ('vibrate' in navigator) {
+      navigator.vibrate(urgent ? [300, 100, 300, 100, 300] : [200, 100, 200])
+    }
+  }, [])
+
+  // Schedule all notification timers
+  useEffect(() => {
+    // Clear all existing timers
+    notificationTimersRef.current.forEach((t) => clearTimeout(t))
+    notificationTimersRef.current = []
+
     if (!userData.notificationEnabled) return
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
 
-    const scheduleNotifications = () => {
-      if (notificationTimerRef.current) {
-        clearTimeout(notificationTimerRef.current)
-      }
+    const now = new Date()
+    const today = getTodayStr()
+    const pendingHabits = userData.habits.filter((h) => !h.completions[today])
+    const pendingCount = pendingHabits.length
+    if (pendingCount === 0) return
 
-      const now = new Date()
-      const today = getTodayStr()
-      const pendingCount = userData.habits.filter((h) => !h.completions[today]).length
+    // ===== MORNING REMINDER =====
+    const [mH, mM] = userData.morningReminderTime.split(':').map(Number)
+    const morningTime = new Date()
+    morningTime.setHours(mH, mM, 0, 0)
 
-      // Check morning reminder
-      const [mH, mM] = userData.morningReminderTime.split(':').map(Number)
-      const morningTime = new Date()
-      morningTime.setHours(mH, mM, 0, 0)
-
-      if (now < morningTime && pendingCount > 0) {
-        const delay = morningTime.getTime() - now.getTime()
-        notificationTimerRef.current = setTimeout(() => {
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('HabitDuo ☀️', {
-              body: `¡Buenos días! Tienes ${pendingCount} hábitos pendientes hoy. ¡Vamos! 💪`,
-              icon: '🔥',
-            })
-          }
-        }, delay)
-      }
-
-      // Check evening reminder
-      const [eH, eM] = userData.eveningReminderTime.split(':').map(Number)
-      const eveningTime = new Date()
-      eveningTime.setHours(eH, eM, 0, 0)
-
-      if (now < eveningTime && pendingCount > 0) {
-        const delay = eveningTime.getTime() - now.getTime()
-        setTimeout(() => {
-          if ('Notification' in window && Notification.permission === 'granted') {
-            const stillPending = userData.habits.filter((h) => !h.completions[getTodayStr()]).length
-            if (stillPending > 0) {
-              new Notification('HabitDuo 🌙', {
-                body: `¡No pierdas tu racha! 🔥 Tienes ${stillPending} hábitos pendientes hoy`,
-                icon: '🔥',
-              })
-            }
-          }
-        }, delay)
-      }
+    if (now < morningTime) {
+      const delay = morningTime.getTime() - now.getTime()
+      const timer = setTimeout(() => {
+        const msg = getRandomMessage(MORNING_MESSAGES)
+        const pendingNow = userData.habits.filter((h) => !h.completions[getTodayStr()]).length
+        if (pendingNow > 0) {
+          sendNotification(
+            msg.title,
+            `${msg.body} (${pendingNow} pendiente${pendingNow > 1 ? 's' : ''})`,
+            'habitduo-morning'
+          )
+        }
+      }, delay)
+      notificationTimersRef.current.push(timer)
     }
 
-    scheduleNotifications()
+    // ===== EVENING REMINDER =====
+    const [eH, eM] = userData.eveningReminderTime.split(':').map(Number)
+    const eveningTime = new Date()
+    eveningTime.setHours(eH, eM, 0, 0)
+
+    if (now < eveningTime) {
+      const delay = eveningTime.getTime() - now.getTime()
+      const timer = setTimeout(() => {
+        const msg = getRandomMessage(EVENING_MESSAGES)
+        const pendingNow = userData.habits.filter((h) => !h.completions[getTodayStr()]).length
+        if (pendingNow > 0) {
+          sendNotification(
+            msg.title,
+            `${msg.body} (${pendingNow} pendiente${pendingNow > 1 ? 's' : ''})`,
+            'habitduo-evening'
+          )
+        }
+      }, delay)
+      notificationTimersRef.current.push(timer)
+    }
+
+    // ===== URGENT REMINDER (30 min before midnight) =====
+    const almostMidnight = new Date()
+    almostMidnight.setHours(23, 30, 0, 0)
+
+    if (now < almostMidnight) {
+      const delay = almostMidnight.getTime() - now.getTime()
+      const timer = setTimeout(() => {
+        const pendingNow = userData.habits.filter((h) => !h.completions[getTodayStr()])
+        if (pendingNow.length > 0) {
+          const msg = getRandomMessage(URGENT_MESSAGES)
+          sendNotification(
+            msg.title,
+            msg.body,
+            'habitduo-urgent',
+            true // urgent = requireInteraction
+          )
+        }
+      }, delay)
+      notificationTimersRef.current.push(timer)
+    }
+
+    // ===== NUDGE: If app is open and habits are still pending, remind periodically =====
+    const nudgeInterval = 45 * 60 * 1000 // 45 minutes
+    const nudgeTimer = setInterval(() => {
+      const pendingNow = userData.habits.filter((h) => !h.completions[getTodayStr()])
+      if (pendingNow.length > 0 && pendingNow.length < userData.habits.length) {
+        // Only nudge if SOME are done (don't spam if none done)
+        const habitNames = pendingNow.slice(0, 2).map((h) => h.name).join(' y ')
+        sendNotification(
+          '💪 ¡Quedan pocos!',
+          `Solo falta ${habitNames}${pendingNow.length > 2 ? ` y ${pendingNow.length - 2} más` : ''}. ¡Ya casi!`,
+          'habitduo-nudge'
+        )
+      }
+    }, nudgeInterval)
+    notificationTimersRef.current.push(nudgeTimer as unknown as ReturnType<typeof setTimeout>)
+
     return () => {
-      if (notificationTimerRef.current) {
-        clearTimeout(notificationTimerRef.current)
-      }
+      notificationTimersRef.current.forEach((t) => clearTimeout(t))
+      notificationTimersRef.current = []
     }
-  }, [userData.notificationEnabled, userData.morningReminderTime, userData.eveningReminderTime, userData.habits])
+  }, [userData.notificationEnabled, userData.morningReminderTime, userData.eveningReminderTime, userData.habits, sendNotification])
 
-  // Request notification permission
+  // Request notification permission (with Service Worker)
   const requestNotification = useCallback(async () => {
     if (!('Notification' in window)) {
-      alert('Tu navegador no soporta notificaciones')
+      alert('Tu navegador no soporta notificaciones. Probá agregar la app a tu pantalla de inicio.')
       return
     }
+
+    // First ensure service worker is registered
+    if ('serviceWorker' in navigator) {
+      try {
+        await navigator.serviceWorker.register('/sw.js')
+      } catch {
+        // Continue even if SW registration fails
+      }
+    }
+
     const permission = await Notification.requestPermission()
+    if (permission === 'granted') {
+      // Send a test notification to confirm it works
+      setTimeout(() => {
+        sendNotification(
+          '🎉 ¡Notificaciones activadas!',
+          'A partir de ahora te vamos a recordar tus hábitos. ¡No vas a poder escapar! 💪🔥',
+          'habitduo-welcome'
+        )
+      }, 500)
+    } else if (permission === 'denied') {
+      alert('Bloqueaste las notificaciones. Para activarlas:\n\n1. Tocá el ícono de candado/candado en la barra de direcciones\n2. Cambiá "Notificaciones" a "Permitir"\n3. Recargá la página')
+    }
+
     setUserData((prev) => {
       const next = { ...prev, notificationEnabled: permission === 'granted' }
       saveData(next)
       return next
     })
-  }, [])
+  }, [sendNotification])
 
   // Complete a habit
   const completeHabit = useCallback((habitId: string) => {

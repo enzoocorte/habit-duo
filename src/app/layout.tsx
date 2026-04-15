@@ -13,7 +13,8 @@ export const metadata: Metadata = {
   keywords: ["hábitos", "rastreador", "racha", "productividad", "gamificación"],
   authors: [{ name: "HabitDuo" }],
   icons: {
-    icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>",
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
   },
   openGraph: {
     title: "HabitDuo - Tu Rastreador de Hábitos",
