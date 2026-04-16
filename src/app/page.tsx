@@ -45,37 +45,27 @@ function getDayXp(habits: Habit[], journal: JournalEntry[], date: string): numbe
   let xp = 0;
   for (const h of habits) {
     if (h.archived) continue;
-    if (h.completions.includes(date)) {
-      xp += h.xpReward;
-    }
+    if (h.completions.includes(date)) xp += h.xpReward;
   }
-  const entry = journal.find((e) => e.date === date);
-  if (entry) xp += 15;
+  if (journal.find((e) => e.date === date)) xp += 15;
   return xp;
 }
 
 function getOverallStreak(habits: Habit[], journal: JournalEntry[], dailyXpGoal: number): number {
   const today = getTodayStr();
   const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-  let streak = 0;
-  let checkDate = new Date();
-
   const todayXp = getDayXp(habits, journal, today);
-  if (todayXp >= dailyXpGoal) {
-    streak = 1;
-    checkDate.setDate(checkDate.getDate() - 1);
-  } else {
-    const yesterdayXp = getDayXp(habits, journal, yesterday);
-    if (yesterdayXp < dailyXpGoal) return 0;
-    checkDate.setDate(checkDate.getDate() - 1);
-  }
+  const yesterdayXp = getDayXp(habits, journal, yesterday);
+  if (todayXp < dailyXpGoal && yesterdayXp < dailyXpGoal) return 0;
 
-  for (let i = 1; i < 365; i++) {
+  let streak = 0;
+  let startOffset = todayXp >= dailyXpGoal ? 0 : 1;
+
+  for (let i = startOffset; i < 365; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
-    const xp = getDayXp(habits, journal, dateStr);
-    if (xp >= dailyXpGoal) {
+    if (getDayXp(habits, journal, dateStr) >= dailyXpGoal) {
       streak++;
     } else {
       break;
@@ -96,12 +86,7 @@ function getHabitStreak(habit: Habit): number {
     for (const comp of sorted) {
       const compDate = new Date(comp + "T12:00:00");
       const diffDays = Math.round((checkDate.getTime() - compDate.getTime()) / 86400000);
-      if (diffDays === streak) {
-        streak++;
-        checkDate = compDate;
-      } else {
-        break;
-      }
+      if (diffDays === streak) { streak++; checkDate = compDate; } else break;
     }
     return streak;
   } else {
@@ -110,19 +95,10 @@ function getHabitStreak(habit: Habit): number {
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     weekStart.setHours(0, 0, 0, 0);
     for (let w = 0; w < 52; w++) {
-      const ws = new Date(weekStart);
-      ws.setDate(ws.getDate() - w * 7);
-      const we = new Date(ws);
-      we.setDate(we.getDate() + 7);
-      const weekComps = habit.completions.filter((c) => {
-        const d = new Date(c + "T12:00:00");
-        return d >= ws && d < we;
-      });
-      if (weekComps.length >= (habit.weeklyGoal || 3)) {
-        streak++;
-      } else if (w > 0) {
-        break;
-      }
+      const ws = new Date(weekStart); ws.setDate(ws.getDate() - w * 7);
+      const we = new Date(ws); we.setDate(we.getDate() + 7);
+      const weekComps = habit.completions.filter((c) => { const d = new Date(c + "T12:00:00"); return d >= ws && d < we; });
+      if (weekComps.length >= (habit.weeklyGoal || 3)) streak++; else if (w > 0) break;
     }
     return streak;
   }
@@ -131,15 +107,59 @@ function getHabitStreak(habit: Habit): number {
 function isWeekComplete(habit: Habit): boolean {
   if (habit.frequency !== "weekly") return false;
   const weekDates = getWeekDates().slice(-7);
-  const thisWeekComps = habit.completions.filter((c) => weekDates.includes(c));
-  return thisWeekComps.length >= (habit.weeklyGoal || 3);
+  return habit.completions.filter((c) => weekDates.includes(c)).length >= (habit.weeklyGoal || 3);
 }
 
-function getXpLevel(xp: number): { name: string; emoji: string; color: string } {
-  if (xp >= 150) return { name: "Dia epico!", emoji: "⚡", color: "text-yellow-500" };
-  if (xp >= 100) return { name: "Dia de racha!", emoji: "🔥", color: "text-[#58CC02]" };
-  if (xp >= 50) return { name: "Buen ritmo", emoji: "💪", color: "text-blue-500" };
-  return { name: "Recien empezando", emoji: "🌱", color: "text-gray-400" };
+function getCompletionRate(habit: Habit): number {
+  const created = new Date(habit.createdAt + "T12:00:00");
+  const now = new Date();
+  const daysSince = Math.max(1, Math.round((now.getTime() - created.getTime()) / 86400000));
+
+  if (habit.frequency === "daily") {
+    const completed = habit.completions.filter((c) => c >= habit.createdAt).length;
+    return Math.round((completed / daysSince) * 100);
+  } else {
+    const weeksSince = Math.max(1, Math.ceil(daysSince / 7));
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    let weeksHit = 0;
+    for (let w = 0; w < weeksSince + 1; w++) {
+      const ws = new Date(weekStart); ws.setDate(ws.getDate() - w * 7);
+      const we = new Date(ws); we.setDate(we.getDate() + 7);
+      const weekComps = habit.completions.filter((c) => { const d = new Date(c + "T12:00:00"); return d >= ws && d < we; });
+      if (weekComps.length >= (habit.weeklyGoal || 3)) weeksHit++;
+    }
+    return Math.round((weeksHit / weeksSince) * 100);
+  }
+}
+
+function getRateColor(rate: number): string {
+  if (rate >= 80) return "text-[#58CC02]";
+  if (rate >= 60) return "text-blue-500";
+  if (rate >= 40) return "text-amber-500";
+  return "text-red-500";
+}
+
+function getRateBarColor(rate: number): string {
+  if (rate >= 80) return "bg-[#58CC02]";
+  if (rate >= 60) return "bg-blue-500";
+  if (rate >= 40) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function getRateLabel(rate: number): string {
+  if (rate >= 80) return "Excelente";
+  if (rate >= 60) return "Bueno";
+  if (rate >= 40) return "Mejorable";
+  return "Te cuesta";
+}
+
+function getXpLevel(xp: number): { name: string; emoji: string } {
+  if (xp >= 150) return { name: "Dia epico!", emoji: "⚡" };
+  if (xp >= 100) return { name: "Dia de racha!", emoji: "🔥" };
+  if (xp >= 50) return { name: "Buen ritmo", emoji: "💪" };
+  return { name: "Recien empezando", emoji: "🌱" };
 }
 
 const defaultHabits: Habit[] = [
@@ -157,6 +177,7 @@ export default function HabitDuo() {
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [screen, setScreen] = useState<"home" | "insights" | "journal" | "settings">("home");
+  const [insightsTab, setInsightsTab] = useState<"overview" | "strategy">("overview");
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [newHabitName, setNewHabitName] = useState("");
   const [newHabitEmoji, setNewHabitEmoji] = useState("✨");
@@ -178,40 +199,21 @@ export default function HabitDuo() {
     const savedJournal = localStorage.getItem("habitduo-journal");
     if (savedJournal) setJournal(JSON.parse(savedJournal));
     const savedSettings = localStorage.getItem("habitduo-settings");
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings);
-      setSettings({ ...defaultSettings, ...parsed });
-    }
+    if (savedSettings) setSettings({ ...defaultSettings, ...JSON.parse(savedSettings) });
     const savedMood = localStorage.getItem("habitduo-todaymood");
     if (savedMood) setTodayMood(parseInt(savedMood));
     const savedNote = localStorage.getItem("habitduo-todaynote");
     if (savedNote) setTodayNote(savedNote);
   }, []);
 
-  useEffect(() => {
-    if (habits.length > 0) localStorage.setItem("habitduo-habits", JSON.stringify(habits));
-  }, [habits]);
-
-  useEffect(() => {
-    localStorage.setItem("habitduo-journal", JSON.stringify(journal));
-  }, [journal]);
-
-  useEffect(() => {
-    localStorage.setItem("habitduo-settings", JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    localStorage.setItem("habitduo-todaymood", todayMood.toString());
-  }, [todayMood]);
-
-  useEffect(() => {
-    localStorage.setItem("habitduo-todaynote", todayNote);
-  }, [todayNote]);
+  useEffect(() => { if (habits.length > 0) localStorage.setItem("habitduo-habits", JSON.stringify(habits)); }, [habits]);
+  useEffect(() => { localStorage.setItem("habitduo-journal", JSON.stringify(journal)); }, [journal]);
+  useEffect(() => { localStorage.setItem("habitduo-settings", JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { localStorage.setItem("habitduo-todaymood", todayMood.toString()); }, [todayMood]);
+  useEffect(() => { localStorage.setItem("habitduo-todaynote", todayNote); }, [todayNote]);
 
   const today = getTodayStr();
   const todayXp = getDayXp(habits, journal, today);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-  const yesterdayXp = getDayXp(habits, journal, yesterday);
   const activeHabits = habits.filter((h) => !h.archived);
   const overallStreak = getOverallStreak(habits, journal, settings.dailyXpGoal);
   const xpPct = Math.min(100, Math.round((todayXp / settings.dailyXpGoal) * 100));
@@ -220,10 +222,17 @@ export default function HabitDuo() {
   const weekData = weekDates.map((date) => ({ date, xp: getDayXp(habits, journal, date) }));
   const totalXpAllTime = habits.reduce((acc, h) => acc + h.completions.length * h.xpReward, 0) + journal.length * 15;
 
+  const habitRates = activeHabits
+    .map((h) => ({ habit: h, rate: getCompletionRate(h) }))
+    .sort((a, b) => a.rate - b.rate);
+
+  const hardestHabits = habitRates.filter((h) => h.rate < 60);
+  const easiestHabits = habitRates.filter((h) => h.rate >= 80);
+  const averageRate = habitRates.length > 0 ? Math.round(habitRates.reduce((s, h) => s + h.rate, 0) / habitRates.length) : 0;
+
   const requestNotifications = useCallback(async () => {
     if (!("Notification" in window)) return false;
-    const permission = await Notification.requestPermission();
-    return permission === "granted";
+    return (await Notification.requestPermission()) === "granted";
   }, []);
 
   const scheduleNudge = useCallback(() => {
@@ -246,10 +255,7 @@ export default function HabitDuo() {
     (window as any).__nudgeTimer = timer;
   }, [settings.notificationsEnabled, settings.nudgeIntervalHours, habits, journal, settings.dailyXpGoal]);
 
-  useEffect(() => {
-    scheduleNudge();
-    return () => { const t = (window as any).__nudgeTimer; if (t) clearInterval(t); };
-  }, [scheduleNudge]);
+  useEffect(() => { scheduleNudge(); return () => { const t = (window as any).__nudgeTimer; if (t) clearInterval(t); }; }, [scheduleNudge]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -263,27 +269,24 @@ export default function HabitDuo() {
     }
   }, []);
 
-  const prevXpRef = useState(todayXp)[0];
+  const prevXp = useState(0);
   useEffect(() => {
-    if (todayXp >= settings.dailyXpGoal && prevXpRef < settings.dailyXpGoal) {
+    if (todayXp >= settings.dailyXpGoal && prevXp[0] < settings.dailyXpGoal) {
       setShowCelebration(true);
       setTimeout(() => setShowCelebration(false), 3000);
     }
-  }, [todayXp, settings.dailyXpGoal, prevXpRef]);
+    prevXp[1](todayXp);
+  }, [todayXp]);
 
   const toggleComplete = (id: string) => {
-    const today = getTodayStr();
-    setHabits((prev) =>
-      prev.map((h) => {
-        if (h.id !== id) return h;
-        if (h.completions.includes(today)) return { ...h, completions: h.completions.filter((c) => c !== today) };
-        return { ...h, completions: [...h.completions, today] };
-      })
-    );
+    setHabits((prev) => prev.map((h) => {
+      if (h.id !== id) return h;
+      if (h.completions.includes(today)) return { ...h, completions: h.completions.filter((c) => c !== today) };
+      return { ...h, completions: [...h.completions, today] };
+    }));
   };
 
   const skipHabit = (id: string) => {
-    const today = getTodayStr();
     setHabits((prev) => prev.map((h) => h.id !== id ? h : { ...h, skips: [...h.skips, today] }));
   };
 
@@ -348,7 +351,6 @@ export default function HabitDuo() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#58CC02] to-[#46a302] pb-20">
-      {/* Celebration overlay */}
       {showCelebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-3xl shadow-2xl p-8 text-center animate-bounce">
@@ -359,20 +361,15 @@ export default function HabitDuo() {
         </div>
       )}
 
-      {/* Header with XP bar */}
       <div className="bg-[#58CC02] px-4 pt-4 pb-8 text-white">
         <div className="max-w-md mx-auto">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-black tracking-tight">🔥 HabitDuo</h1>
             <div className="flex items-center gap-2">
-              {overallStreak > 0 && (
-                <span className="bg-white/20 rounded-xl px-3 py-1.5 text-sm font-bold">🔥 {overallStreak}</span>
-              )}
+              {overallStreak > 0 && <span className="bg-white/20 rounded-xl px-3 py-1.5 text-sm font-bold">🔥 {overallStreak}</span>}
               <button onClick={() => setScreen("settings")} className="bg-white/20 rounded-xl px-3 py-1.5 text-sm font-bold hover:bg-white/30 transition">⚙️</button>
             </div>
           </div>
-
-          {/* XP Progress */}
           <div className="bg-white/20 rounded-2xl p-4 backdrop-blur-sm">
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold text-lg">{xpLevel.emoji} {xpLevel.name}</span>
@@ -393,9 +390,7 @@ export default function HabitDuo() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="max-w-md mx-auto px-4 -mt-4 space-y-4">
-        {/* Navigation */}
         <div className="flex bg-white rounded-2xl shadow-lg overflow-hidden">
           {(["home", "insights", "journal"] as const).map((key) => (
             <button key={key} onClick={() => setScreen(key)} className={"flex-1 py-3 text-sm font-bold transition " + (screen === key ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>
@@ -404,10 +399,8 @@ export default function HabitDuo() {
           ))}
         </div>
 
-        {/* HOME SCREEN */}
         {screen === "home" && (
           <div className="space-y-3">
-            {/* Today XP breakdown */}
             <div className="bg-white rounded-2xl shadow-md p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-bold text-gray-800 text-sm">XP de hoy</h3>
@@ -430,10 +423,9 @@ export default function HabitDuo() {
               </div>
             </div>
 
-            {/* Habit cards */}
             {activeHabits.map((habit) => {
               const streak = getHabitStreak(habit);
-              const isCompleted = habit.frequency === "daily" ? habit.completions.includes(today) : habit.completions.includes(today);
+              const isCompleted = habit.completions.includes(today);
               const isSkipped = habit.skips.includes(today);
               const weekComps = habit.frequency === "weekly" ? habit.completions.filter((c) => weekDates.includes(c)).length : 0;
               const weekDone = habit.frequency === "weekly" && isWeekComplete(habit);
@@ -475,76 +467,181 @@ export default function HabitDuo() {
           </div>
         )}
 
-        {/* INSIGHTS SCREEN */}
         {screen === "insights" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white rounded-2xl shadow-md p-4 text-center">
-                <div className="text-3xl font-black text-[#58CC02]">{overallStreak}</div>
-                <div className="text-xs text-gray-500 font-medium">Racha actual 🔥</div>
-              </div>
-              <div className="bg-white rounded-2xl shadow-md p-4 text-center">
-                <div className="text-3xl font-black text-blue-500">{totalXpAllTime}</div>
-                <div className="text-xs text-gray-500 font-medium">XP totales ⭐</div>
-              </div>
-              <div className="bg-white rounded-2xl shadow-md p-4 text-center">
-                <div className="text-3xl font-black text-purple-500">{activeHabits.length}</div>
-                <div className="text-xs text-gray-500 font-medium">Habitos activos 💪</div>
-              </div>
-              <div className="bg-white rounded-2xl shadow-md p-4 text-center">
-                <div className="text-3xl font-black text-orange-500">{journal.length}</div>
-                <div className="text-xs text-gray-500 font-medium">Entradas diario 📝</div>
-              </div>
+            {/* Insights sub-tabs */}
+            <div className="flex bg-white rounded-2xl shadow-md overflow-hidden">
+              <button onClick={() => setInsightsTab("overview")} className={"flex-1 py-2.5 text-sm font-bold transition " + (insightsTab === "overview" ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>📊 Resumen</button>
+              <button onClick={() => setInsightsTab("strategy")} className={"flex-1 py-2.5 text-sm font-bold transition " + (insightsTab === "strategy" ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>🎯 Estrategia</button>
             </div>
 
-            {/* Weekly XP chart */}
-            <div className="bg-white rounded-2xl shadow-md p-4">
-              <h3 className="font-bold text-gray-800 mb-3">📊 XP por dia</h3>
-              <div className="flex justify-between items-end h-28">
-                {weekData.map((d, i) => {
-                  const dayName = new Date(d.date + "T12:00:00").toLocaleDateString("es", { weekday: "short" });
-                  const maxXP = Math.max(...weekData.map((w) => w.xp), settings.dailyXpGoal);
-                  const hPct = Math.max((d.xp / maxXP) * 100, 3);
-                  const isToday = d.date === today;
-                  const hitGoal = d.xp >= settings.dailyXpGoal;
-                  return (
-                    <div key={i} className="flex flex-col items-center gap-1 flex-1">
-                      <span className="text-[9px] font-bold text-gray-400">{d.xp}</span>
-                      <div className="w-full max-w-[28px] relative" style={{ height: hPct + "%" }}>
-                        <div className={"w-full h-full rounded-lg transition-all " + (hitGoal ? "bg-[#58CC02]" : isToday ? "bg-blue-300" : "bg-gray-200")} style={{ height: "100%" }} />
-                        {(() => {
-                          const goalLine = (settings.dailyXpGoal / maxXP) * 100;
-                          return goalLine < 100 ? <div className="absolute left-0 right-0 border-t-2 border-dashed border-red-300" style={{ bottom: goalLine + "%" }} /> : null;
-                        })()}
-                      </div>
-                      <span className={"text-[10px] font-bold " + (isToday ? "text-[#58CC02]" : "text-gray-400")}>{dayName}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-400">
-                <div className="flex items-center gap-1"><div className="w-3 h-3 bg-[#58CC02] rounded" /> Meta alcanzada</div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 bg-gray-200 rounded" /> En progreso</div>
-              </div>
-            </div>
-
-            {/* Per-habit streaks */}
-            <div className="bg-white rounded-2xl shadow-md p-4">
-              <h3 className="font-bold text-gray-800 mb-3">🔥 Rachas por habito</h3>
-              {activeHabits.map((h) => (
-                <div key={h.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">{h.emoji} {h.name}</span>
-                    <span className="text-[10px] text-[#58CC02] font-bold">+{h.xpReward} XP</span>
+            {insightsTab === "overview" && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white rounded-2xl shadow-md p-4 text-center">
+                    <div className="text-3xl font-black text-[#58CC02]">{overallStreak}</div>
+                    <div className="text-xs text-gray-500 font-medium">Racha actual 🔥</div>
                   </div>
-                  <span className="font-bold text-orange-500">{getHabitStreak(h)} dias</span>
+                  <div className="bg-white rounded-2xl shadow-md p-4 text-center">
+                    <div className="text-3xl font-black text-blue-500">{totalXpAllTime}</div>
+                    <div className="text-xs text-gray-500 font-medium">XP totales ⭐</div>
+                  </div>
+                  <div className="bg-white rounded-2xl shadow-md p-4 text-center">
+                    <div className="text-3xl font-black text-purple-500">{activeHabits.length}</div>
+                    <div className="text-xs text-gray-500 font-medium">Habitos activos 💪</div>
+                  </div>
+                  <div className="bg-white rounded-2xl shadow-md p-4 text-center">
+                    <div className="text-3xl font-black text-orange-500">{journal.length}</div>
+                    <div className="text-xs text-gray-500 font-medium">Entradas diario 📝</div>
+                  </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="bg-white rounded-2xl shadow-md p-4">
+                  <h3 className="font-bold text-gray-800 mb-3">📊 XP por dia</h3>
+                  <div className="flex justify-between items-end h-28">
+                    {weekData.map((d, i) => {
+                      const dayName = new Date(d.date + "T12:00:00").toLocaleDateString("es", { weekday: "short" });
+                      const maxXP = Math.max(...weekData.map((w) => w.xp), settings.dailyXpGoal);
+                      const hPct = Math.max((d.xp / maxXP) * 100, 3);
+                      const isToday = d.date === today;
+                      const hitGoal = d.xp >= settings.dailyXpGoal;
+                      return (
+                        <div key={i} className="flex flex-col items-center gap-1 flex-1">
+                          <span className="text-[9px] font-bold text-gray-400">{d.xp}</span>
+                          <div className="w-full max-w-[28px] relative" style={{ height: hPct + "%" }}>
+                            <div className={"w-full h-full rounded-lg transition-all " + (hitGoal ? "bg-[#58CC02]" : isToday ? "bg-blue-300" : "bg-gray-200")} />
+                            {(() => { const gl = (settings.dailyXpGoal / maxXP) * 100; return gl < 100 ? <div className="absolute left-0 right-0 border-t-2 border-dashed border-red-300" style={{ bottom: gl + "%" }} /> : null; })()}
+                          </div>
+                          <span className={"text-[10px] font-bold " + (isToday ? "text-[#58CC02]" : "text-gray-400")}>{dayName}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2 text-[10px] text-gray-400">
+                    <div className="flex items-center gap-1"><div className="w-3 h-3 bg-[#58CC02] rounded" /> Meta alcanzada</div>
+                    <div className="flex items-center gap-1"><div className="w-3 h-3 bg-gray-200 rounded" /> En progreso</div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-md p-4">
+                  <h3 className="font-bold text-gray-800 mb-3">🔥 Rachas por habito</h3>
+                  {activeHabits.map((h) => (
+                    <div key={h.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{h.emoji} {h.name}</span>
+                        <span className="text-[10px] text-[#58CC02] font-bold">+{h.xpReward} XP</span>
+                      </div>
+                      <span className="font-bold text-orange-500">{getHabitStreak(h)} dias</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {insightsTab === "strategy" && (
+              <>
+                {/* Average rate card */}
+                <div className="bg-white rounded-2xl shadow-md p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-bold text-gray-800">🎯 Tu rendimiento</h3>
+                    <span className={"font-black text-lg " + getRateColor(averageRate)}>{averageRate}%</span>
+                  </div>
+                  <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={"h-full rounded-full transition-all " + getRateBarColor(averageRate)} style={{ width: averageRate + "%" }} />
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">{getRateLabel(averageRate)} en promedio</p>
+                </div>
+
+                {/* Hardest habits */}
+                {hardestHabits.length > 0 && (
+                  <div className="bg-white rounded-2xl shadow-md p-4">
+                    <h3 className="font-bold text-red-500 mb-1">💪 Los que mas te cuestan</h3>
+                    <p className="text-xs text-gray-400 mb-3">Enfocate en estos para mejorar</p>
+                    <div className="space-y-3">
+                      {hardestHabits.map(({ habit, rate }) => (
+                        <div key={habit.id} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">{habit.emoji}</span>
+                              <span className="font-medium text-gray-800 text-sm">{habit.name}</span>
+                              <span className="text-[10px] bg-gray-100 rounded-full px-1.5 py-0.5 text-gray-400">{habit.frequency === "daily" ? "Diario" : "Semanal"}</span>
+                            </div>
+                            <span className={"font-black text-sm " + getRateColor(rate)}>{rate}%</span>
+                          </div>
+                          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={"h-full rounded-full transition-all " + getRateBarColor(rate)} style={{ width: rate + "%" }} />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-gray-400">
+                            <span>{habit.completions.length} completados</span>
+                            <span className={getRateColor(rate)}>{getRateLabel(rate)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Easiest habits */}
+                {easiestHabits.length > 0 && (
+                  <div className="bg-white rounded-2xl shadow-md p-4">
+                    <h3 className="font-bold text-[#58CC02] mb-1">⭐ Los que te salen facil</h3>
+                    <p className="text-xs text-gray-400 mb-3">Segui asi con estos!</p>
+                    <div className="space-y-3">
+                      {easiestHabits.map(({ habit, rate }) => (
+                        <div key={habit.id} className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">{habit.emoji}</span>
+                              <span className="font-medium text-gray-800 text-sm">{habit.name}</span>
+                            </div>
+                            <span className="font-black text-sm text-[#58CC02]">{rate}%</span>
+                          </div>
+                          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full bg-[#58CC02]" style={{ width: rate + "%" }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* All habits ranked */}
+                <div className="bg-white rounded-2xl shadow-md p-4">
+                  <h3 className="font-bold text-gray-800 mb-3">📊 Ranking completo</h3>
+                  <div className="space-y-2">
+                    {habitRates.map(({ habit, rate }, index) => (
+                      <div key={habit.id} className="flex items-center gap-3">
+                        <span className={"w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white " + (index === 0 ? "bg-red-400" : index === habitRates.length - 1 ? "bg-[#58CC02]" : "bg-gray-300")}>
+                          {index + 1}
+                        </span>
+                        <span className="text-sm">{habit.emoji}</span>
+                        <span className="flex-1 font-medium text-gray-700 text-sm">{habit.name}</span>
+                        <div className="w-20 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={"h-full rounded-full " + getRateBarColor(rate)} style={{ width: rate + "%" }} />
+                        </div>
+                        <span className={"font-bold text-sm w-10 text-right " + getRateColor(rate)}>{rate}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tip card */}
+                {hardestHabits.length > 0 && (
+                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl shadow-md p-4 border border-amber-100">
+                    <h3 className="font-bold text-amber-700 mb-1">💡 Consejo</h3>
+                    <p className="text-sm text-amber-600">
+                      Tu habito mas dificil es <strong>{hardestHabits[0].habit.emoji} {hardestHabits[0].habit.name}</strong> con {hardestHabits[0].rate}% de completado.
+                      {hardestHabits[0].rate < 30
+                        ? " Intenta hacerlo mas facil: reduci la dificultad o cambialo a semanal."
+                        : " Ya vas por buen camino, solo necesitas un poco mas de constancia!"}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
-        {/* JOURNAL SCREEN */}
         {screen === "journal" && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl shadow-md p-4">
@@ -576,7 +673,6 @@ export default function HabitDuo() {
           </div>
         )}
 
-        {/* SETTINGS SCREEN */}
         {screen === "settings" && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl shadow-md p-4">
@@ -624,7 +720,6 @@ export default function HabitDuo() {
         )}
       </div>
 
-      {/* Add Habit Modal */}
       {showAddHabit && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={() => setShowAddHabit(false)}>
           <div className="bg-white rounded-t-3xl p-6 w-full max-w-md space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
