@@ -1,18 +1,34 @@
 {
-  "name": "HabitDuo",
-  "short_name": "HabitDuo",
-  "description": "Tu rastreador de hábitos gamificado estilo Duolingo",
+  "name": "Habit Duo",
+  "short_name": "Habit Duo",
+  "description": "Gestor de hábitos con notificaciones",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#58CC02",
-  "theme_color": "#58CC02",
-  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#58cc02",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-192-maskable.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

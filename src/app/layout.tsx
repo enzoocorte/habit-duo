@@ -1,61 +1,51 @@
-import type { Metadata, Viewport } from "next";
-import { Geist } from "next/font/google";
-import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "HabitDuo - Tu Rastreador de Hábitos",
-  description: "Rastrea tus hábitos diarios, mantén tu racha y sube de nivel. ¡Como Duolingo pero para hábitos!",
-  keywords: ["hábitos", "rastreador", "racha", "productividad", "gamificación"],
-  authors: [{ name: "HabitDuo" }],
-  icons: {
-    icon: "/icon-192.png",
-    apple: "/icon-192.png",
-  },
-  openGraph: {
-    title: "HabitDuo - Tu Rastreador de Hábitos",
-    description: "Rastrea tus hábitos diarios, mantén tu racha y sube de nivel",
-    type: "website",
-  },
+  title: 'HabitDuo - Rastreador de Hábitos',
+  description: 'Tu rastreador de hábitos gamificado estilo Duolingo',
+  manifest: '/habit-duo/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "HabitDuo",
+    statusBarStyle: 'default',
+    title: 'HabitDuo',
   },
-  manifest: "/manifest.json",
 };
 
 export const viewport: Viewport = {
-  width: "device-width",
+  themeColor: '#58CC02',
+  width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#58CC02",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es">
       <head>
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="HabitDuo" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="format-detection" content="telephone=no" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="icon" href="/habit-duo/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/habit-duo/icons/icon-192.png" />
       </head>
-      <body
-        className={`${geistSans.variable} antialiased`}
-      >
+      <body className="antialiased">
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/habit-duo/sw.js')
+                    .then(reg => console.log('SW registered:', reg.scope))
+                    .catch(err => console.log('SW registration failed:', err));
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

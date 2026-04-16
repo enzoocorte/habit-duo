@@ -1,63 +1,44 @@
-// HabitDuo Service Worker - Push Notifications & Background Sync
+// Service Worker for HabitDuo PWA
+const CACHE_NAME = 'habitduo-v2';
 
-const CACHE_NAME = 'habitduo-v2'
-
-// Install
 self.addEventListener('install', (event) => {
-  self.skipWaiting()
-})
+  console.log('[SW] Installed');
+  self.skipWaiting();
+});
 
-// Activate
 self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim())
-})
+  console.log('[SW] Activated');
+  event.waitUntil(clients.claim());
+});
 
-// Handle push notifications
 self.addEventListener('push', (event) => {
-  if (!event.data) return
-
-  const data = event.data.json()
-  const title = data.title || 'HabitDuo 🔥'
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || 'HabitDuo';
   const options = {
-    body: data.body || '¡Tienes hábitos pendientes!',
-    icon: data.icon || '/icon-192.png',
-    badge: '/icon-192.png',
-    vibrate: data.vibrate || [200, 100, 200, 100, 200],
-    tag: data.tag || 'habitduo-reminder',
-    renotify: true,
-    requireInteraction: true,
+    body: data.body || '¡Hora de completar tus hábitos! 🔥',
+    icon: '/habit-duo/icons/icon-192.png',
+    badge: '/habit-duo/icons/icon-192.png',
+    vibrate: [100, 50, 100],
     data: {
-      url: data.url || '/',
-    },
-    actions: data.actions || [
-      { action: 'open', title: '💪 ¡Vamos!' },
-      { action: 'later', title: '🔄 Después' },
-    ],
-  }
+      url: data.url || '/habit-duo/'
+    }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
 
-  event.waitUntil(self.registration.showNotification(title, options))
-})
-
-// Handle notification click
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-
-  if (event.action === 'later') {
-    // Dismiss - no action needed
-    return
-  }
-
-  // Open the app
+  event.notification.close();
+  const url = event.notification.data?.url || '/habit-duo/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // Focus existing window
       for (const client of clientList) {
-        if ('focus' in client) {
-          return client.focus()
+        if (client.url.includes('habit-duo') && 'focus' in client) {
+          return client.focus();
         }
       }
-      // Open new window
-      return clients.openWindow(event.notification.data.url || '/')
+      if (clients.openWindow) {
+        return clients.openWindow(url);
+      }
     })
-  )
-})
+  );
+});
