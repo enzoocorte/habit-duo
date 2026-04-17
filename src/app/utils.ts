@@ -23,6 +23,32 @@ export function getWeekDates(): string[] {
   return dates;
 }
 
+// === BARRIER BONUS ===
+// Premia fuertemente ROMPER LA BARRERA de empezar
+// Ej: Leer xpReward=30, minAmount=5, barrierBonus=10
+//   0 min = 0 XP
+//   1 min = 5 XP (empezaste!)
+//   5 min = 10 XP (barrera rota!)
+//   10 min = 15 XP (10 barrera + 5 extra)
+//   25 min = 30 XP (cap)
+export function getBarrierBonus(habit: Habit): number {
+  if (habit.barrierBonus && habit.barrierBonus > 0) return habit.barrierBonus;
+  return Math.max(5, Math.round(habit.xpReward / 3));
+}
+
+export function calcProgressiveXp(habit: Habit, amount: number): number {
+  if (amount === 0) return 0;
+  const barrier = getBarrierBonus(habit);
+  const minAmt = habit.minAmount ?? 5;
+
+  if (amount < minAmt) {
+    return Math.min(5, barrier);
+  }
+
+  const additionalXp = amount - minAmt;
+  return Math.min(barrier + additionalXp, habit.xpReward);
+}
+
 // === XP CALCULATIONS ===
 export function getHabitXp(habit: Habit, date: string): number {
   if (habit.archived) return 0;
@@ -31,8 +57,7 @@ export function getHabitXp(habit: Habit, date: string): number {
 
   if (habit.habitType === "build") {
     if (habit.progressive) {
-      if (amount < (habit.minAmount || 5)) return 0;
-      return Math.min(amount, habit.xpReward);
+      return calcProgressiveXp(habit, amount);
     }
     return completed ? habit.xpReward : 0;
   }
@@ -196,9 +221,9 @@ function dateOffset(dateStr: string, days: number): string {
 const today = getLocalDate();
 
 export const DEFAULT_HABITS: Habit[] = [
-  { id: "1", name: "Ejercicio", emoji: "🏃", frequency: "daily", xpReward: 30, habitType: "build", progressive: true, unit: "min", minAmount: 5, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "2", name: "Leer", emoji: "📖", frequency: "daily", xpReward: 30, habitType: "build", progressive: true, unit: "min", minAmount: 5, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "3", name: "Meditar", emoji: "🧘", frequency: "weekly", weeklyGoal: 3, xpReward: 20, habitType: "build", progressive: true, unit: "min", minAmount: 5, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
+  { id: "1", name: "Ejercicio", emoji: "🏃", frequency: "daily", xpReward: 30, habitType: "build", progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
+  { id: "2", name: "Leer", emoji: "📖", frequency: "daily", xpReward: 30, habitType: "build", progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
+  { id: "3", name: "Meditar", emoji: "🧘", frequency: "weekly", weeklyGoal: 3, xpReward: 20, habitType: "build", progressive: true, unit: "min", minAmount: 5, barrierBonus: 7, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
   { id: "4", name: "Comer bien", emoji: "🥗", frequency: "daily", xpReward: 15, habitType: "build", progressive: false, createdAt: today, completions: [], skips: [], archived: false },
   { id: "5", name: "Comer mal", emoji: "🍔", frequency: "daily", xpReward: 25, habitType: "avoid", progressive: false, createdAt: today, completions: [], skips: [], archived: false },
   { id: "6", name: "Celular de mas", emoji: "📱", frequency: "daily", xpReward: 20, habitType: "avoid", progressive: true, unit: "min", minAmount: 0, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },

@@ -9,6 +9,7 @@ export interface Habit {
   progressive: boolean;
   unit?: string;
   minAmount?: number;
+  barrierBonus?: number;
   amounts?: Record<string, number>;
   createdAt: string;
   completions: string[];

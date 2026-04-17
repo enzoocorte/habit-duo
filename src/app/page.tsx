@@ -24,19 +24,22 @@ export default function HabitDuo() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [prevXp, setPrevXp] = useState(0);
 
-  // Load
+  // Load - safe migration with nullish coalescing (preserves existing data!)
   useEffect(() => {
     const sh = localStorage.getItem("habitduo-habits");
     if (sh) {
       const parsed = JSON.parse(sh);
       const migrated = parsed.map((h: any) => ({
         ...h,
-        xpReward: h.xpReward || (h.frequency === "weekly" ? 30 : 20),
-        habitType: h.habitType || "build",
-        progressive: h.progressive || false,
-        unit: h.unit || "min",
-        minAmount: h.minAmount || 5,
-        amounts: h.amounts || {},
+        xpReward: h.xpReward ?? (h.frequency === "weekly" ? 30 : 20),
+        habitType: h.habitType ?? "build",
+        progressive: h.progressive ?? false,
+        unit: h.unit ?? "min",
+        minAmount: h.minAmount ?? (h.habitType === "avoid" ? 0 : 5),
+        barrierBonus: h.barrierBonus ?? undefined,
+        amounts: h.amounts ?? {},
+        completions: Array.isArray(h.completions) ? [...new Set(h.completions)] : [],
+        skips: Array.isArray(h.skips) ? [...new Set(h.skips)] : [],
       }));
       setHabits(migrated);
     } else setHabits(DEFAULT_HABITS);
@@ -109,11 +112,14 @@ export default function HabitDuo() {
     }
   }, []);
 
-  // Habit actions
+  // Habit actions - deduplicated completions prevent double counting
   const toggleComplete = (id: string) => {
     setHabits((prev) => prev.map((h) => {
       if (h.id !== id) return h;
-      if (h.completions.includes(today)) return { ...h, completions: [...new Set(h.completions.filter((c) => c !== today))] };
+      const alreadyDone = h.completions.includes(today);
+      if (alreadyDone) {
+        return { ...h, completions: [...new Set(h.completions.filter((c) => c !== today))] };
+      }
       return { ...h, completions: [...new Set([...h.completions, today])] };
     }));
   };
@@ -127,16 +133,15 @@ export default function HabitDuo() {
       if (h.id !== id) return h;
       const newAmounts = { ...h.amounts, [date]: amount };
       const newCompletions = [...h.completions];
-      // For build progressive: auto-mark complete if amount >= minAmount
       if (h.habitType === "build" && h.progressive) {
-        if (amount >= (h.minAmount || 5) && !newCompletions.includes(date)) {
+        const minAmt = h.minAmount ?? 5;
+        if (amount >= minAmt && !newCompletions.includes(date)) {
           newCompletions.push(date);
-        } else if (amount < (h.minAmount || 5)) {
+        } else if (amount < minAmt) {
           const idx = newCompletions.indexOf(date);
           if (idx >= 0) newCompletions.splice(idx, 1);
         }
       }
-      // For avoid progressive: auto-mark if amount > 0
       if (h.habitType === "avoid" && h.progressive) {
         if (amount > 0 && !newCompletions.includes(date)) {
           newCompletions.push(date);
@@ -219,7 +224,6 @@ export default function HabitDuo() {
       <XPHeader todayXp={todayXp} effectiveGoal={effectiveGoal} overallStreak={overallStreak} autoGoal={settings.autoGoal} onSettings={() => setScreen("settings")} />
 
       <div className="max-w-md mx-auto px-4 -mt-4 space-y-4">
-        {/* Nav */}
         <div className="flex bg-white rounded-2xl shadow-lg overflow-hidden">
           {(["home", "insights", "journal"] as const).map((key) => (
             <button key={key} onClick={() => setScreen(key)} className={"flex-1 py-3 text-sm font-bold transition " + (screen === key ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>
@@ -230,7 +234,6 @@ export default function HabitDuo() {
 
         {screen === "home" && (
           <div className="space-y-3">
-            {/* XP breakdown */}
             <div className="bg-white rounded-2xl shadow-md p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-bold text-gray-800 text-sm">XP de hoy</h3>
@@ -248,7 +251,6 @@ export default function HabitDuo() {
               </div>
             </div>
 
-            {/* Build habits */}
             {buildHabits.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🟢 Construir</h3>
@@ -258,7 +260,6 @@ export default function HabitDuo() {
               </div>
             )}
 
-            {/* Avoid habits */}
             {avoidHabits.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🔴 Evitar</h3>

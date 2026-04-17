@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Habit } from "../types";
-import { getLocalDate, getWeekDates, getHabitStreak, isWeekComplete, getHabitXp } from "../utils";
+import { getLocalDate, getWeekDates, getHabitStreak, isWeekComplete, getHabitXp, getBarrierBonus, calcProgressiveXp } from "../utils";
 
 interface HabitCardProps {
   habit: Habit;
@@ -29,8 +29,6 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onA
   const isProgressive = habit.progressive;
   const isAvoid = habit.habitType === "avoid";
 
-  const completed = isAvoid ? didIt : (didIt || weekDone || (isProgressive && amount >= (habit.minAmount || 5)));
-
   const handleAddAmount = (add: number) => {
     onUpdateAmount(habit.id, today, amount + add);
   };
@@ -44,36 +42,50 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onA
     setShowAmountInput(false);
   };
 
-  // Progressive build habit
+  // Progressive build habit WITH BARRIER BONUS
   if (isProgressive && !isAvoid) {
-    const minAmt = habit.minAmount || 5;
+    const minAmt = habit.minAmount ?? 5;
+    const barrier = getBarrierBonus(habit);
+    const currentXp = calcProgressiveXp(habit, amount);
     const reached = amount >= minAmt;
-    const progressPct = Math.min(100, (amount / habit.xpReward) * 100);
+    const started = amount > 0 && amount < minAmt;
+    const progressPct = Math.min(100, (currentXp / habit.xpReward) * 100);
+    const barrierPct = Math.min(100, (barrier / habit.xpReward) * 100);
+
     return (
-      <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (reached ? "ring-2 ring-[#58CC02]" : "")}>
+      <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (reached ? "ring-2 ring-[#58CC02]" : started ? "ring-2 ring-amber-400" : "")}>
         <div className="flex items-center gap-3">
-          <div className={"w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black transition-all " + (reached ? "bg-[#58CC02] text-white shadow-lg shadow-green-200" : "bg-gray-100 text-gray-400")}>
-            {habit.emoji}
+          <div className={"w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black transition-all " + (reached ? "bg-[#58CC02] text-white shadow-lg shadow-green-200" : started ? "bg-amber-100 text-amber-500" : "bg-gray-100 text-gray-400")}>
+            {reached ? "🔥" : started ? "⚡" : habit.emoji}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="font-bold text-gray-800">{habit.name}</span>
-              <span className="text-[10px] bg-green-50 text-green-600 rounded-full px-1.5 py-0.5 font-bold">+{todayXp} XP</span>
+              <span className="text-[10px] bg-green-50 text-green-600 rounded-full px-1.5 py-0.5 font-bold">+{currentXp} XP</span>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-[#58CC02] rounded-full transition-all" style={{ width: progressPct + "%" }} />
+              <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden relative">
+                {barrierPct < 100 && (
+                  <div className="absolute top-0 bottom-0 w-0.5 bg-amber-400 z-10" style={{ left: barrierPct + "%" }} />
+                )}
+                <div className={"h-full rounded-full transition-all " + (reached ? "bg-[#58CC02]" : started ? "bg-amber-400" : "bg-gray-300")} style={{ width: progressPct + "%" }} />
               </div>
-              <span className={"text-xs font-bold " + (reached ? "text-[#58CC02]" : "text-gray-400")}>{amount}/{habit.xpReward} {habit.unit || "min"}</span>
+              <span className={"text-xs font-bold " + (reached ? "text-[#58CC02]" : "text-gray-400")}>{currentXp}/{habit.xpReward}</span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {started && <span className="text-[10px] text-amber-500 font-bold">⚡ Empezaste! +{currentXp} XP</span>}
+              {reached && <span className="text-[10px] text-[#58CC02] font-bold">🔥 Barrera rota! +{barrier} XP</span>}
+              {reached && amount > minAmt && <span className="text-[10px] text-blue-500">+{currentXp - barrier} extra</span>}
+              {!started && !reached && <span className="text-[10px] text-gray-400">{amount} {habit.unit || "min"}</span>}
               {streak > 0 && <span className="text-xs font-bold text-orange-500">🔥 {streak}</span>}
               {habit.frequency === "weekly" && <span className="text-[10px] text-gray-400">{weekComps}/{habit.weeklyGoal || 3}/sem</span>}
-              {!reached && amount > 0 && <span className="text-[10px] text-amber-500">Minimo: {minAmt} {habit.unit || "min"}</span>}
-              {reached && <span className="text-[10px] text-[#58CC02]">✓ Completado</span>}
             </div>
           </div>
           <button onClick={() => setEditing(!editing)} className="text-gray-300 hover:text-gray-500 transition p-1">⋮</button>
+        </div>
+        <div className="mt-2 bg-gray-50 rounded-xl px-3 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] text-gray-500">🔥 Barrera: {minAmt} {habit.unit || "min"} = +{barrier} XP</span>
+          <span className="text-[10px] text-gray-400">Despues: 1 {habit.unit || "min"} = 1 XP</span>
         </div>
         <div className="flex gap-2 mt-2">
           {[5, 10, 15, 30].map((n) => (
@@ -126,7 +138,7 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onA
           {[15, 30, 60].map((n) => (
             <button key={n} onClick={() => handleAddAmount(n)} className="flex-1 bg-red-50 hover:bg-red-100 rounded-lg py-1.5 text-xs font-bold text-red-500 transition">+{n}</button>
           ))}
-          <button onClick={() => { onUpdateAmount(habit.id, today, 0); onToggle(habit.id); }} className="bg-green-50 hover:bg-green-100 rounded-lg px-3 py-1.5 text-xs font-bold text-green-600 transition">No lo hice ✓</button>
+          <button onClick={() => onUpdateAmount(habit.id, today, 0)} className="bg-green-50 hover:bg-green-100 rounded-lg px-3 py-1.5 text-xs font-bold text-green-600 transition">No lo hice ✓</button>
         </div>
         {editing && (
           <div className="mt-2 pt-2 border-t border-gray-100 flex gap-2">
@@ -140,6 +152,7 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onA
 
   // Simple build habit
   if (!isAvoid) {
+    const completed = didIt || weekDone;
     return (
       <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (completed ? "ring-2 ring-[#58CC02] " : "") + (isSkipped ? "opacity-60" : "")}>
         <div className="flex items-center gap-3">
