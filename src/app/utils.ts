@@ -92,21 +92,39 @@ export function getHabitStreak(habit: Habit): number {
   let streak = 0;
   const today = getLocalDate();
   let checkDate = new Date(today);
+  const createdDate = habit.createdAt || today;
+
   for (let i = 0; i < 365; i++) {
     const dateStr = checkDate.toISOString().split("T")[0];
+
+    // No contar días antes de la creación del hábito
+    if (dateStr < createdDate) break;
+
     const isCompleted = habit.completions?.includes(dateStr) ?? false;
     const isSkipped = habit.skips?.includes(dateStr) ?? false;
     const amount = habit.amounts?.[dateStr] ?? 0;
+
     let done = false;
     if (habit.habitType === "avoid") {
-      done = !isCompleted && !isSkipped;
+      // Solo cuenta como "evitado" si hay datos para ese día
+      // o si es hoy y no se marcó como caído
+      if (dateStr === today) {
+        done = !isCompleted && !isSkipped;
+      } else {
+        // Días pasados: solo cuenta si hubo interacción (skip o complete)
+        // Si no hay datos, no asumimos que evitó
+        const hasData = isCompleted || isSkipped;
+        done = !isCompleted && hasData;
+      }
     } else if (habit.progressive) {
       done = amount >= (habit.minAmount ?? 1);
     } else {
       done = isCompleted;
     }
+
     if (done) streak++;
     else if (dateStr !== today) break;
+
     checkDate.setDate(checkDate.getDate() - 1);
   }
   return streak;
@@ -120,23 +138,34 @@ export function isWeekComplete(habits: Habit[], settings: AppSettings): boolean 
 
 export function getCompletionRate(habit: Habit, days: number = 7): number {
   const today = getLocalDate();
+  const createdDate = habit.createdAt || today;
   let completed = 0;
+  let counted = 0;
+
   for (let i = 0; i < days; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
+
+    // No contar días antes de la creación
+    if (dateStr < createdDate) continue;
+    counted++;
+
     const isCompleted = habit.completions?.includes(dateStr) ?? false;
     const isSkipped = habit.skips?.includes(dateStr) ?? false;
     const amount = habit.amounts?.[dateStr] ?? 0;
+
     if (habit.habitType === "avoid") {
-      if (!isCompleted && !isSkipped) completed++;
+      const hasData = isCompleted || isSkipped;
+      if (!isCompleted && hasData) completed++;
+      // Si no hay datos, no cuenta ni bien ni mal
     } else if (habit.progressive) {
       if (amount >= (habit.minAmount ?? 1)) completed++;
     } else {
       if (isCompleted) completed++;
     }
   }
-  return days > 0 ? completed / days : 0;
+  return counted > 0 ? completed / counted : 0;
 }
 
 export function getRateColor(rate: number): string {
@@ -258,12 +287,12 @@ export function getNewlyUnlocked(prev: Achievement[], next: Achievement[]): Achi
 }
 
 export const DEFAULT_HABITS: Habit[] = [
-  { id: "h1", name: "Ejercicio", emoji: "🏃", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 10, barrierBonus: 20, amounts: {}, completions: [], skips: [] },
-  { id: "h2", name: "Leer", emoji: "📖", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [] },
-  { id: "h3", name: "Meditar", emoji: "🧘", habitType: "build", xpReward: 20, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [] },
-  { id: "h4", name: "Comer bien", emoji: "🥗", habitType: "build", xpReward: 25, progressive: false, amounts: {}, completions: [], skips: [] },
-  { id: "h5", name: "Comer mal", emoji: "🍔", habitType: "avoid", xpReward: 20, progressive: false, amounts: {}, completions: [], skips: [] },
-  { id: "h6", name: "Celular de mas", emoji: "📱", habitType: "avoid", xpReward: 15, progressive: false, amounts: {}, completions: [], skips: [] },
+  { id: "h1", name: "Ejercicio", emoji: "🏃", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 10, barrierBonus: 20, amounts: {}, completions: [], skips: [], createdAt: undefined },
+  { id: "h2", name: "Leer", emoji: "📖", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [], createdAt: undefined },
+  { id: "h3", name: "Meditar", emoji: "🧘", habitType: "build", xpReward: 20, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [], createdAt: undefined },
+  { id: "h4", name: "Comer bien", emoji: "🥗", habitType: "build", xpReward: 25, progressive: false, amounts: {}, completions: [], skips: [], createdAt: undefined },
+  { id: "h5", name: "Comer mal", emoji: "🍔", habitType: "avoid", xpReward: 20, progressive: false, amounts: {}, completions: [], skips: [], createdAt: undefined },
+  { id: "h6", name: "Celular de mas", emoji: "📱", habitType: "avoid", xpReward: 15, progressive: false, amounts: {}, completions: [], skips: [], createdAt: undefined },
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {

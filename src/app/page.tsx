@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Habit, JournalEntry, AppSettings, Achievement, ACHIEVEMENT_DEFS } from "./types";
+import { Habit, JournalEntry, AppSettings, Achievement } from "./types";
 import {
   getLocalDate, calcAutoGoal, getOverallStreak, getDayXp,
   getMaxPossibleXp, getTotalXp, checkAchievements, getNewlyUnlocked,
@@ -47,17 +47,18 @@ export default function Home() {
           amounts: habit.amounts || {},
           archived: habit.archived ?? false,
           barrierBonus: habit.barrierBonus ?? (habit.minAmount ? habit.minAmount * 2 : undefined),
+          createdAt: habit.createdAt || today,
         }));
         setHabits(migrated);
       } else {
-        setHabits(DEFAULT_HABITS);
+        setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today })));
       }
       if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s), smartNotifications: JSON.parse(s).smartNotifications ?? true });
       if (j) setJournalEntries(JSON.parse(j));
       if (a) setAchievements(JSON.parse(a));
     } catch (e) {
       console.error("Error loading data:", e);
-      setHabits(DEFAULT_HABITS);
+      setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today })));
     }
     setLoaded(true);
   }, []);
@@ -166,7 +167,7 @@ export default function Home() {
   }, []);
 
   const handleReset = useCallback(() => {
-    setHabits(DEFAULT_HABITS); setSettings(DEFAULT_SETTINGS); setJournalEntries({}); setAchievements([]);
+    setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today }))); setSettings(DEFAULT_SETTINGS); setJournalEntries({}); setAchievements([]);
     localStorage.removeItem("habitduo_habits"); localStorage.removeItem("habitduo_settings"); localStorage.removeItem("habitduo_journal"); localStorage.removeItem("habitduo_achievements");
   }, []);
 
