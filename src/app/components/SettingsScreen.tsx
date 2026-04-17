@@ -1,8 +1,7 @@
-"use client";
 import { AppSettings, Habit } from "../types";
-import { calcAutoGoal, getMaxPossibleXp, DEFAULT_SETTINGS } from "../utils";
+import { calcAutoGoal, getMaxPossibleXp } from "../utils";
 
-interface SettingsScreenProps {
+interface Props {
   settings: AppSettings;
   habits: Habit[];
   onUpdateSettings: (s: AppSettings) => void;
@@ -11,57 +10,62 @@ interface SettingsScreenProps {
   onReset: () => void;
 }
 
-export default function SettingsScreen({ settings, habits, onUpdateSettings, onExport, onImport, onReset }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, habits, onUpdateSettings, onExport, onImport, onReset }: Props) {
   const autoGoal = calcAutoGoal(habits);
-  const maxPossible = getMaxPossibleXp(habits);
+  const maxXp = getMaxPossibleXp(habits);
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-md p-4">
-        <h3 className="font-bold text-gray-800 mb-4">⚙️ Configuracion</h3>
-        <div className="flex items-center justify-between py-3 border-b border-gray-100">
-          <div><div className="font-medium text-gray-800">🔔 Notificaciones</div><div className="text-xs text-gray-400">Recordatorios para tus habitos</div></div>
-          <button onClick={() => onUpdateSettings({ ...settings, notificationsEnabled: !settings.notificationsEnabled })} className={"w-14 h-8 rounded-full transition-all relative " + (settings.notificationsEnabled ? "bg-[#58CC02]" : "bg-gray-300")}>
-            <div className={"w-6 h-6 bg-white rounded-full absolute top-1 transition-all shadow " + (settings.notificationsEnabled ? "left-7" : "left-1")} />
+    <div className="px-4 pb-20">
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Notificaciones</h3>
+        <div className="flex items-center justify-between py-2">
+          <span className="text-sm">Notificaciones inteligentes</span>
+          <button
+            onClick={() => onUpdateSettings({ ...settings, notifications: !settings.notifications, smartNotifications: !settings.notifications })}
+            className="w-12 h-6 rounded-full"
+            style={{ background: settings.notifications ? "#00b894" : "#2d3436" }}
+          >
+            <div className="w-5 h-5 rounded-full bg-white" style={{ transform: settings.notifications ? "translateX(26px)" : "translateX(2px)" }} />
           </button>
         </div>
-        <div className="py-3 border-b border-gray-100">
-          <div className="font-medium text-gray-800 mb-1">⏰ Intervalo</div>
-          <div className="flex gap-2 mt-1">
-            {[1, 2, 3, 6, 12].map((h) => (
-              <button key={h} onClick={() => onUpdateSettings({ ...settings, nudgeIntervalHours: h })} className={"px-3 py-1.5 rounded-lg text-sm font-bold transition " + (settings.nudgeIntervalHours === h ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{h}h</button>
-            ))}
+        {settings.notifications && (
+          <div className="mt-2 p-3 rounded-lg text-xs" style={{ background: "#2d3436", color: "#b2bec3" }}>
+            <div className="mb-1">Notificaciones inteligentes:</div>
+            <div>· 18:00 — Racha en riesgo</div>
+            <div>· 21:00 — Ultimo aviso</div>
+            <div>· 17:00 — Habito pendiente</div>
+            <div>· Al llegar al goal — Celebracion</div>
           </div>
+        )}
+      </div>
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Meta Diaria</h3>
+        <div className="flex items-center justify-between py-2">
+          <span className="text-sm">Meta automatica (75%)</span>
+          <button
+            onClick={() => onUpdateSettings({ ...settings, autoGoal: !settings.autoGoal })}
+            className="w-12 h-6 rounded-full"
+            style={{ background: settings.autoGoal ? "#00b894" : "#2d3436" }}
+          >
+            <div className="w-5 h-5 rounded-full bg-white" style={{ transform: settings.autoGoal ? "translateX(26px)" : "translateX(2px)" }} />
+          </button>
         </div>
-        <div className="py-3 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-1">
-            <div className="font-medium text-gray-800">🎯 Meta diaria</div>
-            <button onClick={() => onUpdateSettings({ ...settings, autoGoal: !settings.autoGoal })} className={"text-xs font-bold px-2 py-1 rounded-lg " + (settings.autoGoal ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{settings.autoGoal ? "AUTO" : "MANUAL"}</button>
-          </div>
-          <div className="text-xs text-gray-400 mb-2">{settings.autoGoal ? "Auto: " + autoGoal + " XP (75% del maximo)" : "Manual"}</div>
-          {!settings.autoGoal && (
-            <div className="flex gap-2">
-              {[50, 75, 100, 150, 200].map((xp) => (
-                <button key={xp} onClick={() => onUpdateSettings({ ...settings, dailyXpGoal: xp })} className={"px-3 py-1.5 rounded-lg text-sm font-bold transition " + (settings.dailyXpGoal === xp ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{xp}</button>
-              ))}
-            </div>
-          )}
-          {settings.autoGoal && (
-            <div className="bg-gray-50 rounded-xl p-3 mt-1">
-              <div className="text-xs text-gray-500">Max posible: {maxPossible} XP/dia</div>
-              <div className="text-xs text-[#58CC02] font-bold">Meta auto: {autoGoal} XP/dia</div>
-            </div>
-          )}
-        </div>
-        <div className="py-3 border-b border-gray-100">
-          <div className="font-medium text-gray-800 mb-1">💾 Datos</div>
-          <div className="flex gap-2 mt-1">
-            <button onClick={onExport} className="flex-1 bg-blue-50 text-blue-600 font-bold py-2 rounded-xl text-sm hover:bg-blue-100 transition">📤 Exportar</button>
-            <button onClick={onImport} className="flex-1 bg-purple-50 text-purple-600 font-bold py-2 rounded-xl text-sm hover:bg-purple-100 transition">📥 Importar</button>
-          </div>
-        </div>
-        <div className="py-3">
-          <button onClick={onReset} className="w-full bg-red-50 text-red-600 font-bold py-2 rounded-xl text-sm hover:bg-red-100 transition">🗑 Reiniciar</button>
+        {!settings.autoGoal && (
+          <input
+            type="number"
+            value={settings.dailyGoal}
+            onChange={(e) => onUpdateSettings({ ...settings, dailyGoal: Math.max(1, parseInt(e.target.value) || 1) })}
+            className="w-full px-3 py-2 rounded-lg text-sm text-black mt-2"
+          />
+        )}
+        <div className="text-xs mt-2" style={{ color: "#b2bec3" }}>Auto: {autoGoal} XP · Maximo: {maxXp} XP</div>
+      </div>
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Datos</h3>
+        <div className="flex flex-col gap-2">
+          <button onClick={onExport} className="w-full py-2 rounded-lg text-sm font-bold" style={{ background: "#2d3436", color: "#dfe6e9" }}>Exportar datos</button>
+          <button onClick={onImport} className="w-full py-2 rounded-lg text-sm font-bold" style={{ background: "#2d3436", color: "#dfe6e9" }}>Importar datos</button>
+          <button onClick={() => { if (confirm("Resetear todos los datos?")) onReset(); }} className="w-full py-2 rounded-lg text-sm font-bold" style={{ background: "#3a1a1a", color: "#e17055" }}>Resetear todo</button>
         </div>
       </div>
     </div>

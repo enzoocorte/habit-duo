@@ -1,44 +1,58 @@
-"use client";
-import { JournalEntry } from "../types";
-import { MOOD_EMOJIS, MOOD_LABELS } from "../types";
+import { useState } from "react";
+import { JournalEntry, MOOD_EMOJIS, MOOD_LABELS } from "../types";
+import { getLocalDate } from "../utils";
 
-interface JournalScreenProps {
-  journal: JournalEntry[];
-  todayMood: number;
-  todayNote: string;
-  onSetMood: (m: number) => void;
-  onSetNote: (n: string) => void;
-  onSave: () => void;
+interface Props {
+  entry: JournalEntry | null;
+  onSave: (entry: JournalEntry) => void;
 }
 
-export default function JournalScreen({ journal, todayMood, todayNote, onSetMood, onSetNote, onSave }: JournalScreenProps) {
+export default function JournalScreen({ entry, onSave }: Props) {
+  const [mood, setMood] = useState(entry?.mood ?? 2);
+  const [text, setText] = useState(entry?.text ?? "");
+  const [saved, setSaved] = useState(!!entry);
+
+  const handleSave = () => {
+    if (!text.trim()) return;
+    onSave({ mood, text: text.trim(), xp: 15 });
+    setSaved(true);
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-md p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-gray-800">Como te sentis hoy?</h3>
-          <span className="text-xs bg-[#58CC02]/10 text-[#58CC02] font-bold px-2 py-1 rounded-lg">+15 XP</span>
-        </div>
-        <div className="flex justify-between mb-3">
-          {MOOD_EMOJIS.map((emoji, i) => (
-            <button key={i} onClick={() => onSetMood(i + 1)} className={"text-3xl transition-all " + (todayMood === i + 1 ? "scale-125 drop-shadow-lg" : "opacity-40 hover:opacity-70")}>{emoji}</button>
+    <div className="px-4 pb-20">
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Como estas hoy?</h3>
+        <div className="flex gap-2 mb-4">
+          {MOOD_EMOJIS.map((e, i) => (
+            <button
+              key={i}
+              onClick={() => { setMood(i); setSaved(false); }}
+              className="flex-1 py-2 rounded-lg text-center"
+              style={{ background: mood === i ? "#6c5ce7" : "#2d3436", transform: mood === i ? "scale(1.1)" : "scale(1)" }}
+            >
+              <div className="text-xl">{e}</div>
+              <div className="text-[10px]" style={{ color: "#b2bec3" }}>{MOOD_LABELS[i]}</div>
+            </button>
           ))}
         </div>
-        {todayMood > 0 && <p className="text-center text-sm text-gray-500 mb-3">{MOOD_LABELS[todayMood - 1]}</p>}
-        <textarea value={todayNote} onChange={(e) => onSetNote(e.target.value)} placeholder="Escribi algo sobre tu dia..." className="w-full bg-gray-50 rounded-xl p-3 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-[#58CC02]" />
-        <button onClick={onSave} disabled={todayMood === 0} className="mt-3 w-full bg-[#58CC02] text-white font-bold py-2.5 rounded-xl disabled:opacity-40 hover:bg-[#4fb002] transition">Guardar entrada</button>
       </div>
-      <div className="space-y-2">
-        {journal.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7).map((entry) => (
-          <div key={entry.date} className="bg-white rounded-2xl shadow-md p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-2xl">{MOOD_EMOJIS[entry.mood - 1]}</span>
-              <span className="font-bold text-gray-700">{entry.date}</span>
-              <span className="text-xs text-[#58CC02] font-bold">+15 XP</span>
-            </div>
-            {entry.note && <p className="text-sm text-gray-500 ml-9">{entry.note}</p>}
-          </div>
-        ))}
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Diario (+15 XP)</h3>
+        <textarea
+          value={text}
+          onChange={(e) => { setText(e.target.value); setSaved(false); }}
+          placeholder="Que paso hoy? Que aprendiste?"
+          className="w-full h-32 p-3 rounded-lg text-sm resize-none"
+          style={{ background: "#2d3436", color: "#dfe6e9", border: "1px solid rgba(255,255,255,0.1)" }}
+        />
+        <button
+          onClick={handleSave}
+          disabled={!text.trim() || saved}
+          className="w-full mt-3 py-2.5 rounded-lg font-bold text-sm"
+          style={{ background: saved ? "#2d3436" : "#6c5ce7", color: saved ? "#b2bec3" : "white" }}
+        >
+          {saved ? "✓ Guardado (+15 XP)" : "Guardar (+15 XP)"}
+        </button>
       </div>
     </div>
   );

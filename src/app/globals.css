@@ -1,265 +1,69 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-duo-green: #58CC02;
-  --color-duo-green-dark: #46a302;
-  --color-duo-orange: #FF9600;
-  --color-duo-yellow: #FFC800;
-  --color-duo-red: #FF4B4B;
-  --color-duo-blue: #1CB0F6;
-  --color-duo-purple: #CE82FF;
-  --color-duo-pink: #FF86D0;
-  --color-duo-gray: #E5E5E5;
-  --color-duo-gray-dark: #AFAFAF;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --radius: 0.75rem;
-  --background: #f7f7f7;
-  --foreground: #3c3c3c;
-  --card: #ffffff;
-  --card-foreground: #3c3c3c;
-  --popover: #ffffff;
-  --popover-foreground: #3c3c3c;
-  --primary: #58CC02;
-  --primary-foreground: #ffffff;
-  --secondary: #E5E5E5;
-  --secondary-foreground: #777777;
-  --muted: #f0f0f0;
-  --muted-foreground: #777777;
-  --accent: #FFC800;
-  --accent-foreground: #3c3c3c;
-  --destructive: #FF4B4B;
-  --border: #E5E5E5;
-  --input: #E5E5E5;
-  --ring: #58CC02;
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-card: #1e2a4a;
+  --accent-purple: #6c5ce7;
+  --accent-green: #00b894;
+  --accent-red: #e17055;
+  --accent-yellow: #fdcb6e;
+  --accent-blue: #74b9ff;
+  --text-primary: #dfe6e9;
+  --text-secondary: #b2bec3;
 }
 
-/* ===== DUOLINGO-STYLE ANIMATIONS ===== */
+* { box-sizing: border-box; }
 
-/* Streak fire pulse */
-@keyframes streak-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); }
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
 }
 
-.animate-streak-pulse {
-  animation: streak-pulse 1.5s ease-in-out infinite;
-}
+.xp-bar-fill { transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+.habit-card { transition: transform 0.2s, box-shadow 0.2s; }
+.habit-card:active { transform: scale(0.97); }
 
-/* Completion celebration - scale bounce */
 @keyframes celebrate {
-  0% { transform: scale(0.5); opacity: 0; }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-.animate-celebrate {
-  animation: celebrate 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* Confetti particles */
-@keyframes confetti-fall {
-  0% { transform: translateY(-100%) rotate(0deg); opacity: 1; }
-  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
-}
-
-.confetti-particle {
-  animation: confetti-fall 1.5s ease-out forwards;
-}
-
-/* XP popup float */
-@keyframes xp-float {
-  0% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(-60px); opacity: 0; }
-}
-
-.animate-xp-float {
-  animation: xp-float 1s ease-out forwards;
-}
-
-/* Card slide in from bottom */
-@keyframes slide-up {
-  0% { transform: translateY(30px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
-}
-
-.animate-slide-up {
-  animation: slide-up 0.4s ease-out forwards;
-}
-
-/* Shake animation for already completed */
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
-  20%, 40%, 60%, 80% { transform: translateX(4px); }
-}
-
-.animate-shake {
-  animation: shake 0.5s ease-in-out;
-}
-
-/* Button press feedback */
-@keyframes press {
   0% { transform: scale(1); }
-  50% { transform: scale(0.95); }
+  50% { transform: scale(1.05); }
   100% { transform: scale(1); }
 }
+.celebrate { animation: celebrate 0.5s ease-in-out; }
 
-.animate-press:active {
-  transform: scale(0.95);
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
+.slide-up { animation: slideUp 0.3s ease-out; }
 
-/* Level up glow */
-@keyframes level-glow {
-  0%, 100% { box-shadow: 0 0 5px rgba(88, 204, 2, 0.3); }
-  50% { box-shadow: 0 0 20px rgba(88, 204, 2, 0.6), 0 0 40px rgba(88, 204, 2, 0.3); }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+.fade-in { animation: fadeIn 0.3s ease-out; }
 
-.animate-level-glow {
-  animation: level-glow 2s ease-in-out infinite;
+@keyframes achievement-pop {
+  0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
 }
+.achievement-pop { animation: achievement-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
-/* Streak milestone fire */
-@keyframes fire-dance {
-  0%, 100% { transform: scaleY(1) scaleX(1); }
-  25% { transform: scaleY(1.1) scaleX(0.95); }
-  50% { transform: scaleY(0.95) scaleX(1.05); }
-  75% { transform: scaleY(1.05) scaleX(0.98); }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  height: 6px; border-radius: 3px; background: #2d3436; outline: none;
 }
-
-.animate-fire-dance {
-  animation: fire-dance 0.8s ease-in-out infinite;
-}
-
-/* Progress bar fill */
-@keyframes progress-fill {
-  0% { width: 0%; }
-}
-
-.animate-progress-fill {
-  animation: progress-fill 0.8s ease-out forwards;
-}
-
-/* Fade in */
-@keyframes fade-in {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out forwards;
-}
-
-/* Tab content transition */
-@keyframes tab-enter {
-  0% { opacity: 0; transform: translateX(20px); }
-  100% { opacity: 1; transform: translateX(0); }
-}
-
-.animate-tab-enter {
-  animation: tab-enter 0.3s ease-out forwards;
-}
-
-/* Bounce in */
-@keyframes bounce-in {
-  0% { transform: scale(0); }
-  50% { transform: scale(1.1); }
-  70% { transform: scale(0.95); }
-  100% { transform: scale(1); }
-}
-
-.animate-bounce-in {
-  animation: bounce-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* Glow pulse for streak number */
-@keyframes glow-pulse {
-  0%, 100% { text-shadow: 0 0 5px rgba(255, 150, 0, 0.3); }
-  50% { text-shadow: 0 0 15px rgba(255, 150, 0, 0.6), 0 0 30px rgba(255, 150, 0, 0.3); }
-}
-
-.animate-glow-pulse {
-  animation: glow-pulse 2s ease-in-out infinite;
-}
-
-/* Ripple effect for buttons */
-@keyframes ripple {
-  0% { transform: scale(0); opacity: 0.5; }
-  100% { transform: scale(4); opacity: 0; }
-}
-
-/* Weekly dot fill */
-@keyframes dot-fill {
-  0% { transform: scale(0); }
-  100% { transform: scale(1); }
-}
-
-.animate-dot-fill {
-  animation: dot-fill 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* Custom scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d1d1;
-  border-radius: 20px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
-}
-
-/* ===== BASE STYLES ===== */
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-    -webkit-tap-highlight-color: transparent;
-  }
-  
-  body {
-    @apply bg-background text-foreground;
-    overscroll-behavior-y: contain;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
-  /* Prevent pull-to-refresh on mobile */
-  html {
-    overscroll-behavior: none;
-  }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; border-radius: 50%; background: var(--accent-purple); cursor: pointer;
 }

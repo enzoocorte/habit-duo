@@ -1,34 +1,14 @@
 {
-  "name": "Habit Duo",
-  "short_name": "Habit Duo",
-  "description": "Gestor de hábitos con notificaciones",
-  "start_url": "/",
+  "name": "HabitDuo",
+  "short_name": "HabitDuo",
+  "description": "Duolingo-style habit tracker PWA",
+  "start_url": "/habit-duo/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#58cc02",
-  "orientation": "portrait-primary",
+  "background_color": "#1a1a2e",
+  "theme_color": "#6c5ce7",
+  "orientation": "portrait",
   "icons": [
-    {
-      "src": "/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    },
-    {
-      "src": "/icons/icon-192-maskable.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    }
+    { "src": "/habit-duo/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/habit-duo/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }

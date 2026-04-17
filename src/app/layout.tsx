@@ -1,52 +1,25 @@
-import type { Metadata, Viewport } from 'next';
-import './globals.css';
+import type { Metadata, Viewport } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'HabitDuo - Rastreador de Hábitos',
-  description: 'Tu rastreador de hábitos gamificado estilo Duolingo',
-  manifest: '/habit-duo/manifest.json',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'HabitDuo',
-  },
+  title: "HabitDuo",
+  description: "Duolingo-style habit tracker PWA",
+  manifest: "/habit-duo/manifest.json",
+  icons: { icon: "/habit-duo/icon-192.png", apple: "/habit-duo/icon-192.png" },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#58CC02',
-  width: 'device-width',
+  themeColor: "#6c5ce7",
+  width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false,
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <head>
-        <link rel="icon" href="/habit-duo/icons/icon-192.png" />
-        <link rel="apple-touch-icon" href="/habit-duo/icons/icon-192.png" />
-      </head>
-      <body className="antialiased">
-        {children}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                  navigator.serviceWorker.register('/habit-duo/sw.js')
-                    .then(reg => console.log('SW registered:', reg.scope))
-                    .catch(err => console.log('SW registration failed:', err));
-                });
-              }
-            `,
-          }}
-        />
-      </body>
+      <head><link rel="apple-touch-icon" href="/habit-duo/icon-192.png" /></head>
+      <body>{children}</body>
     </html>
   );
 }

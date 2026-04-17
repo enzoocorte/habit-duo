@@ -1,73 +1,522 @@
+#!/usr/bin/env python3
+"""Generate HabitDuo PWA - Full project generator"""
+
 import os
 
-base = os.path.expanduser("~/habit-duo-fix")
-
 def write(path, content):
-    full = os.path.join(base, path)
-    os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, 'w', encoding='utf-8') as f:
-        f.write(content.strip() + '\n')
-    print(f"  OK {path}")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print(f"  ✓ {path}")
 
-# ============================================================
-# TYPES
-# ============================================================
-write("src/app/types.ts", r"""
-export interface Habit {
+def main():
+    base = os.path.dirname(os.path.abspath(__file__))
+    
+    # ========================
+    # package.json
+    # ========================
+    write(os.path.join(base, "package.json"), '''{
+  "name": "habit-duo",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "canvas-confetti": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.4.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "@types/canvas-confetti": "^1.6.0"
+  }
+}''')
+
+    # ========================
+    # next.config.js
+    # ========================
+    write(os.path.join(base, "next.config.js"), '''/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'export',
+  basePath: '/habit-duo',
+  assetPrefix: '/habit-duo/',
+  images: {
+    unoptimized: true,
+  },
+  trailingSlash: true,
+};
+
+module.exports = nextConfig;
+''')
+
+    # ========================
+    # tsconfig.json
+    # ========================
+    write(os.path.join(base, "tsconfig.json"), '''{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+''')
+
+    # ========================
+    # tailwind.config.ts
+    # ========================
+    write(os.path.join(base, "tailwind.config.ts"), '''import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+export default config;
+''')
+
+    # ========================
+    # postcss.config.js
+    # ========================
+    write(os.path.join(base, "postcss.config.js"), '''module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+''')
+
+    # ========================
+    # public/manifest.json
+    # ========================
+    write(os.path.join(base, "public", "manifest.json"), '''{
+  "name": "HabitDuo",
+  "short_name": "HabitDuo",
+  "description": "Duolingo-style habit tracker PWA",
+  "start_url": "/habit-duo/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#6c5ce7",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/habit-duo/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/habit-duo/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}''')
+
+    # ========================
+    # public/sw.js
+    # ========================
+    write(os.path.join(base, "public", "sw.js"), r'''const CACHE_NAME = "habit-duo-v2";
+const ASSETS = ["/habit-duo/"];
+
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", (e) => {
+  e.respondWith(
+    caches.match(e.request).then((r) => r || fetch(e.request))
+  );
+});
+
+// Smart notification scheduling
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SCHEDULE_NOTIFICATIONS") {
+    scheduleSmartNotifications(event.data.payload);
+  }
+  if (event.data && event.data.type === "CANCEL_NOTIFICATIONS") {
+    cancelAllNotifications();
+  }
+});
+
+async function scheduleSmartNotifications(payload) {
+  const { todayXp, effectiveGoal, incompleteHabits, streak } = payload;
+  
+  // Cancel existing scheduled notifications
+  await cancelAllNotifications();
+  
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  // Type 1: Streak at risk - at 18:00
+  if (todayXp < effectiveGoal * 0.5) {
+    const hour18 = new Date(today);
+    hour18.setHours(18, 0, 0, 0);
+    if (hour18 > now) {
+      const missing = effectiveGoal - todayXp;
+      scheduleNotification(
+        "streak-risk",
+        hour18,
+        "\ud83d\udd25 Tu racha est\u00e1 en riesgo",
+        `Te faltan ${missing} XP para tu goal. \u00a1Vamos!`
+      );
+    }
+  }
+  
+  // Type 2: Last chance - at 21:00
+  if (todayXp < effectiveGoal) {
+    const hour21 = new Date(today);
+    hour21.setHours(21, 0, 0, 0);
+    if (hour21 > now) {
+      const missing = effectiveGoal - todayXp;
+      scheduleNotification(
+        "last-chance",
+        hour21,
+        "\u23f3 \u00daltima oportunidad",
+        `Te faltan ${missing} XP. \u00a1Salv\u00e1 tu racha!`
+      );
+    }
+  }
+  
+  // Type 4: Specific habit reminder - at 17:00
+  if (incompleteHabits && incompleteHabits.length > 0) {
+    const hour17 = new Date(today);
+    hour17.setHours(17, 0, 0, 0);
+    if (hour17 > now) {
+      const habit = incompleteHabits[0];
+      scheduleNotification(
+        "habit-reminder",
+        hour17,
+        `\ud83c\udfc3 ${habit.name} te espera`,
+        habit.progressive 
+          ? `${habit.minAmount || 5} ${habit.unit || "min"} ahora valen ${habit.barrierBonus || 10} XP`
+          : `\u00a1Completalo y gan\u00e1 ${habit.xpReward} XP!`
+      );
+    }
+  }
+}
+
+function scheduleNotification(id, time, title, body) {
+  // Store notification in IndexedDB for reliability
+  const dbPromise = openDB();
+  dbPromise.then(db => {
+    const tx = db.transaction("notifications", "readwrite");
+    tx.objectStore("notifications").put({
+      id,
+      time: time.getTime(),
+      title,
+      body,
+      fired: false
+    });
+  });
+  
+  // Use setTimeout as backup (works while app is open)
+  const delay = time.getTime() - Date.now();
+  if (delay > 0 && delay < 86400000) {
+    setTimeout(() => {
+      self.registration.showNotification(title, {
+        body,
+        icon: "/habit-duo/icon-192.png",
+        badge: "/habit-duo/icon-192.png",
+        tag: id,
+        vibrate: [200, 100, 200],
+        data: { type: id }
+      });
+    }, delay);
+  }
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("HabitDuoNotifications", 1);
+    request.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains("notifications")) {
+        db.createObjectStore("notifications", { keyPath: "id" });
+      }
+    };
+    request.onsuccess = (e) => resolve(e.target.result);
+    request.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function cancelAllNotifications() {
+  self.registration.getNotifications().then(notifications => {
+    notifications.forEach(n => n.close());
+  });
+}
+
+// Periodic background check (every 30 min when app might be in background)
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === "habit-check") {
+    event.waitUntil(checkAndNotify());
+  }
+});
+
+async function checkAndNotify() {
+  // Notify clients to send updated data
+  const clients = await self.clients.matchAll();
+  clients.forEach(client => {
+    client.postMessage({ type: "REQUEST_UPDATE" });
+  });
+}
+''')
+
+    # ========================
+    # src/app/globals.css
+    # ========================
+    write(os.path.join(base, "src", "app", "globals.css"), '''@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-card: #1e2a4a;
+  --accent-purple: #6c5ce7;
+  --accent-green: #00b894;
+  --accent-red: #e17055;
+  --accent-yellow: #fdcb6e;
+  --accent-blue: #74b9ff;
+  --text-primary: #dfe6e9;
+  --text-secondary: #b2bec3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.xp-bar-fill {
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.habit-card {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.habit-card:active {
+  transform: scale(0.97);
+}
+
+@keyframes celebrate {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.celebrate {
+  animation: celebrate 0.5s ease-in-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(108, 92, 231, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(108, 92, 231, 0.6); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes achievement-pop {
+  0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.achievement-pop {
+  animation: achievement-pop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-100px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: #2d3436;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-purple);
+  cursor: pointer;
+}
+''')
+
+    # ========================
+    # src/app/types.ts
+    # ========================
+    write(os.path.join(base, "src", "app", "types.ts"), '''export interface Habit {
   id: string;
   name: string;
   emoji: string;
-  frequency: "daily" | "weekly";
-  weeklyGoal?: number;
-  xpReward: number;
   habitType: "build" | "avoid";
+  xpReward: number;
   progressive: boolean;
   unit?: string;
   minAmount?: number;
+  barrierBonus?: number;  // XP bonus for breaking the starting barrier
   amounts?: Record<string, number>;
-  createdAt: string;
-  completions: string[];
-  skips: string[];
-  archived: boolean;
+  completions?: string[];
+  skips?: string[];
+  archived?: boolean;
+  createdAt?: string;
 }
 
 export interface JournalEntry {
-  date: string;
   mood: number;
-  note: string;
+  text: string;
+  xp: number;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  unlockedAt?: string;  // date when unlocked, undefined = locked
 }
 
 export interface AppSettings {
-  notificationsEnabled: boolean;
-  nudgeIntervalHours: number;
-  dailyXpGoal: number;
+  dailyGoal: number;
   autoGoal: boolean;
+  notifications: boolean;
+  notificationInterval: number;
+  smartNotifications: boolean;
 }
 
-export const MOOD_EMOJIS = ["😢", "😟", "😐", "😊", "🤩"] as const;
-export const MOOD_LABELS = ["Muy mal", "Mal", "Normal", "Bien", "Genial"] as const;
-""")
+export const MOOD_EMOJIS = ["😢", "😕", "😐", "🙂", "😄"];
+export const MOOD_LABELS = ["Terrible", "Mal", "Normal", "Bien", "Genial"];
 
-# ============================================================
-# UTILS
-# ============================================================
-write("src/app/utils.ts", r"""
-import { Habit, JournalEntry, AppSettings } from "./types";
+export const ACHIEVEMENT_DEFS: Achievement[] = [
+  { id: "streak_3", name: "Primeros pasos", emoji: "🔥", description: "3 días seguidos con racha" },
+  { id: "streak_7", name: "En racha", emoji: "🔥", description: "7 días seguidos con racha" },
+  { id: "streak_14", name: "Imparable", emoji: "💥", description: "14 días seguidos con racha" },
+  { id: "streak_30", name: "Leyenda", emoji: "⚡", description: "30 días seguidos con racha" },
+  { id: "streak_60", name: "Mítico", emoji: "🌟", description: "60 días seguidos con racha" },
+  { id: "streak_100", name: "Dios del hábito", emoji: "👑", description: "100 días seguidos con racha" },
+  { id: "level_5", name: "Aprendiz", emoji: "📖", description: "Alcanzar nivel 5" },
+  { id: "level_10", name: "Disciplinado", emoji: "🎯", description: "Alcanzar nivel 10" },
+  { id: "level_25", name: "Maestro", emoji: "🏅", description: "Alcanzar nivel 25" },
+  { id: "level_50", name: "Gran Maestro", emoji: "💎", description: "Alcanzar nivel 50" },
+  { id: "total_xp_500", name: "Medio kilo", emoji: "💰", description: "Acumular 500 XP total" },
+  { id: "total_xp_2000", name: "Dos kilos", emoji: "💰", description: "Acumular 2.000 XP total" },
+  { id: "total_xp_5000", name: "Cinco kilos", emoji: "💰", description: "Acumular 5.000 XP total" },
+  { id: "total_xp_10000", name: "Diez kilos", emoji: "💰", description: "Acumular 10.000 XP total" },
+  { id: "perfect_week", name: "Semana perfecta", emoji: "🏆", description: "Completar 100% de una semana" },
+  { id: "all_habits_day", name: "Día perfecto", emoji: "⭐", description: "Completar todos los hábitos un día" },
+  { id: "journal_7", name: "Escritor", emoji: "✍️", description: "Escribir 7 entradas en el diario" },
+  { id: "journal_30", name: "Cronista", emoji: "📝", description: "Escribir 30 entradas en el diario" },
+  { id: "avoid_7", name: "Resistencia", emoji: "🛡️", description: "7 días evitando un mal hábito" },
+  { id: "avoid_30", name: "Inquebrantable", emoji: "🚫", description: "30 días evitando un mal hábito" },
+];
+''')
 
-// === TIMEZONE: Argentina UTC-3 ===
+    # ========================
+    # src/app/utils.ts
+    # ========================
+    write(os.path.join(base, "src", "app", "utils.ts"), '''import { Habit, JournalEntry, AppSettings, Achievement, ACHIEVEMENT_DEFS } from "./types";
+
+// ===== TIMEZONE =====
 export function getLocalDate(): string {
   try {
-    return new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+    return new Date().toLocaleDateString("en-CA", {
+      timeZone: "America/Argentina/Buenos_Aires",
+    });
   } catch {
+    // Fallback: manual UTC-3 offset
     const now = new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const ar = new Date(utc - 3 * 3600000);
-    return ar.toISOString().split("T")[0];
+    const utc3 = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+    return utc3.toISOString().split("T")[0];
   }
 }
 
 export function getWeekDates(): string[] {
-  const today = new Date(getLocalDate() + "T12:00:00");
+  const today = getLocalDate();
   const dates: string[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
@@ -77,683 +526,1014 @@ export function getWeekDates(): string[] {
   return dates;
 }
 
-// === XP CALCULATIONS ===
+// ===== XP CALCULATIONS =====
 export function getHabitXp(habit: Habit, date: string): number {
-  if (habit.archived) return 0;
-  const completed = habit.completions.includes(date);
-  const amount = habit.amounts?.[date] || 0;
+  const isCompleted = habit.completions?.includes(date) ?? false;
+  const isSkipped = habit.skips?.includes(date) ?? false;
+  const amount = habit.amounts?.[date] ?? 0;
 
-  if (habit.habitType === "build") {
-    if (habit.progressive) {
-      if (amount < (habit.minAmount || 5)) return 0;
-      return Math.min(amount, habit.xpReward);
+  if (habit.habitType === "avoid") {
+    if (isSkipped) return 0;
+    if (isCompleted) {
+      // Did the bad habit → lose XP
+      return -habit.xpReward;
     }
-    return completed ? habit.xpReward : 0;
+    // Avoided it → gain XP
+    return habit.xpReward;
   }
 
-  // avoid
+  // Build habit
   if (habit.progressive) {
-    if (amount > 0) return -Math.min(amount, habit.xpReward);
-    if (habit.frequency === "daily") return habit.xpReward;
+    if (isSkipped) return 0;
+    const minAmount = habit.minAmount ?? 1;
+    const barrierBonus = habit.barrierBonus ?? (minAmount * 2);
+    
+    if (amount >= minAmount) {
+      // Broke the barrier! Give barrierBonus + 1 XP per extra unit
+      const extraUnits = amount - minAmount;
+      const totalXp = barrierBonus + extraUnits;
+      // Cap at xpReward
+      return Math.min(totalXp, habit.xpReward);
+    }
+    // Didn't reach minimum → 0 XP
     return 0;
   }
 
-  if (completed) return -habit.xpReward;
-  if (habit.frequency === "daily") return habit.xpReward;
+  // Simple build habit
+  if (isSkipped) return 0;
+  if (isCompleted) return habit.xpReward;
   return 0;
 }
 
-export function getDayXp(habits: Habit[], journal: JournalEntry[], date: string): number {
-  let xp = 0;
-  for (const h of habits) xp += getHabitXp(h, date);
-  if (journal.find((e) => e.date === date)) xp += 15;
-  return xp;
-}
-
-export function calcAutoGoal(habits: Habit[]): number {
-  let maxDaily = 0;
-  for (const h of habits) {
-    if (h.archived) continue;
-    if (h.habitType === "build") {
-      maxDaily += h.frequency === "daily" ? h.xpReward : Math.round(h.xpReward * (h.weeklyGoal || 3) / 7);
-    } else {
-      maxDaily += h.xpReward;
-    }
+export function getDayXp(habits: Habit[], date: string, journal?: JournalEntry): number {
+  let total = habits
+    .filter((h) => !h.archived)
+    .reduce((sum, h) => sum + getHabitXp(h, date), 0);
+  if (journal && date === getLocalDate()) {
+    total += journal.xp || 0;
   }
-  maxDaily += 15;
-  return Math.max(20, Math.round(maxDaily * 0.75 / 5) * 5);
+  return total;
 }
 
 export function getMaxPossibleXp(habits: Habit[]): number {
-  let max = 0;
-  for (const h of habits) {
-    if (h.archived) continue;
-    if (h.habitType === "build") max += h.xpReward;
-    else max += h.xpReward;
-  }
-  return max + 15;
+  return habits
+    .filter((h) => !h.archived)
+    .reduce((sum, h) => {
+      if (h.habitType === "avoid") return sum + h.xpReward;
+      if (h.progressive) return sum + h.xpReward; // max = xpReward (capped)
+      return sum + h.xpReward;
+    }, 0);
 }
 
-// === STREAKS ===
-export function getOverallStreak(habits: Habit[], journal: JournalEntry[], goal: number): number {
-  const today = getLocalDate();
-  const todayXp = getDayXp(habits, journal, today);
-  const yesterday = dateOffset(today, -1);
-  const yesterdayXp = getDayXp(habits, journal, yesterday);
-  if (todayXp < goal && yesterdayXp < goal) return 0;
+export function calcAutoGoal(habits: Habit[]): number {
+  const max = getMaxPossibleXp(habits);
+  return Math.round(max * 0.75);
+}
+
+// ===== STREAKS =====
+export function getOverallStreak(habits: Habit[], settings: AppSettings): number {
   let streak = 0;
-  const start = todayXp >= goal ? 0 : 1;
-  for (let i = start; i < 365; i++) {
-    if (getDayXp(habits, journal, dateOffset(today, -i)) >= goal) streak++;
-    else break;
+  const today = getLocalDate();
+  let checkDate = new Date(today);
+
+  for (let i = 0; i < 365; i++) {
+    const dateStr = checkDate.toISOString().split("T")[0];
+    const dayXp = getDayXp(habits, dateStr);
+    const goal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+
+    if (dateStr === today) {
+      // Today: don't break streak if still in progress
+      if (dayXp >= goal) streak++;
+    } else {
+      if (dayXp >= goal) streak++;
+      else break;
+    }
+
+    checkDate.setDate(checkDate.getDate() - 1);
   }
   return streak;
 }
 
 export function getHabitStreak(habit: Habit): number {
-  if (habit.habitType === "avoid" && habit.frequency === "daily") {
-    let streak = 0;
-    for (let i = 0; i < 365; i++) {
-      const d = dateOffset(getLocalDate(), -i);
-      if (!habit.completions.includes(d)) streak++;
-      else break;
-    }
-    return streak;
-  }
-
-  if (habit.completions.length === 0) return 0;
-  const sorted = [...new Set(habit.completions)].sort().reverse();
-  const today = getLocalDate();
-  const yesterday = dateOffset(today, -1);
-
-  if (habit.frequency === "daily") {
-    if (sorted[0] !== today && sorted[0] !== yesterday) return 0;
-    let streak = 0, check = new Date(sorted[0] + "T12:00:00");
-    for (const c of sorted) {
-      const cd = new Date(c + "T12:00:00");
-      if (Math.round((check.getTime() - cd.getTime()) / 86400000) === streak) { streak++; check = cd; }
-      else break;
-    }
-    return streak;
-  }
-
   let streak = 0;
-  const ws0 = new Date(); ws0.setDate(ws0.getDate() - ws0.getDay()); ws0.setHours(0, 0, 0, 0);
-  for (let w = 0; w < 52; w++) {
-    const ws = new Date(ws0); ws.setDate(ws.getDate() - w * 7);
-    const we = new Date(ws); we.setDate(we.getDate() + 7);
-    const wc = habit.completions.filter((c) => { const d = new Date(c + "T12:00:00"); return d >= ws && d < we; });
-    if (wc.length >= (habit.weeklyGoal || 3)) streak++; else if (w > 0) break;
+  const today = getLocalDate();
+  let checkDate = new Date(today);
+
+  for (let i = 0; i < 365; i++) {
+    const dateStr = checkDate.toISOString().split("T")[0];
+    const isCompleted = habit.completions?.includes(dateStr) ?? false;
+    const isSkipped = habit.skips?.includes(dateStr) ?? false;
+    const amount = habit.amounts?.[dateStr] ?? 0;
+
+    let done = false;
+    if (habit.habitType === "avoid") {
+      done = !isCompleted && !isSkipped; // avoided = not done bad thing
+    } else if (habit.progressive) {
+      done = amount >= (habit.minAmount ?? 1);
+    } else {
+      done = isCompleted;
+    }
+
+    if (done) streak++;
+    else if (dateStr !== today) break;
+
+    checkDate.setDate(checkDate.getDate() - 1);
   }
   return streak;
 }
 
-export function isWeekComplete(habit: Habit): boolean {
-  if (habit.frequency !== "weekly") return false;
-  const wd = getWeekDates().slice(-7);
-  return habit.completions.filter((c) => wd.includes(c)).length >= (habit.weeklyGoal || 3);
+// ===== COMPLETION =====
+export function isWeekComplete(habits: Habit[], settings: AppSettings): boolean {
+  const dates = getWeekDates();
+  const goal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+  return dates.every((d) => getDayXp(habits, d) >= goal);
 }
 
-// === COMPLETION RATES ===
-export function getCompletionRate(habit: Habit): number {
-  const created = new Date(habit.createdAt + "T12:00:00");
-  const daysSince = Math.max(1, Math.round((Date.now() - created.getTime()) / 86400000));
+export function getCompletionRate(habit: Habit, days: number = 7): number {
+  const today = getLocalDate();
+  let completed = 0;
 
-  if (habit.habitType === "avoid" && habit.frequency === "daily") {
-    const avoided = daysSince - habit.completions.filter((c) => c >= habit.createdAt).length;
-    return Math.round((avoided / daysSince) * 100);
-  }
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    const isCompleted = habit.completions?.includes(dateStr) ?? false;
+    const isSkipped = habit.skips?.includes(dateStr) ?? false;
+    const amount = habit.amounts?.[dateStr] ?? 0;
 
-  if (habit.frequency === "daily") {
-    return Math.round((habit.completions.filter((c) => c >= habit.createdAt).length / daysSince) * 100);
+    if (habit.habitType === "avoid") {
+      if (!isCompleted && !isSkipped) completed++;
+    } else if (habit.progressive) {
+      if (amount >= (habit.minAmount ?? 1)) completed++;
+    } else {
+      if (isCompleted) completed++;
+    }
   }
-
-  const weeksSince = Math.max(1, Math.ceil(daysSince / 7));
-  const ws0 = new Date(); ws0.setDate(ws0.getDate() - ws0.getDay()); ws0.setHours(0, 0, 0, 0);
-  let weeksHit = 0;
-  for (let w = 0; w < weeksSince + 1; w++) {
-    const ws = new Date(ws0); ws.setDate(ws.getDate() - w * 7);
-    const we = new Date(ws); we.setDate(we.getDate() + 7);
-    if (habit.completions.filter((c) => { const d = new Date(c + "T12:00:00"); return d >= ws && d < we; }).length >= (habit.weeklyGoal || 3)) weeksHit++;
-  }
-  return Math.round((weeksHit / weeksSince) * 100);
+  return days > 0 ? completed / days : 0;
 }
 
+// ===== VISUAL HELPERS =====
 export function getRateColor(rate: number): string {
-  if (rate >= 80) return "text-[#58CC02]"; if (rate >= 60) return "text-blue-500";
-  if (rate >= 40) return "text-amber-500"; return "text-red-500";
+  if (rate >= 0.8) return "#00b894";
+  if (rate >= 0.5) return "#fdcb6e";
+  return "#e17055";
 }
-export function getRateBarColor(rate: number): string {
-  if (rate >= 80) return "bg-[#58CC02]"; if (rate >= 60) return "bg-blue-500";
-  if (rate >= 40) return "bg-amber-500"; return "bg-red-500";
+
+export function getBarColor(pct: number): string {
+  if (pct >= 100) return "#00b894";
+  if (pct >= 75) return "#74b9ff";
+  if (pct >= 50) return "#fdcb6e";
+  return "#e17055";
 }
+
 export function getRateLabel(rate: number): string {
-  if (rate >= 80) return "Excelente"; if (rate >= 60) return "Bueno";
-  if (rate >= 40) return "Mejorable"; return "Te cuesta";
+  if (rate >= 0.9) return "Excelente";
+  if (rate >= 0.7) return "Bueno";
+  if (rate >= 0.5) return "Regular";
+  return "Necesita mejora";
 }
 
-export function getXpLevel(xp: number, goal: number): { name: string; emoji: string } {
-  if (xp >= goal * 1.5) return { name: "Dia epico!", emoji: "⚡" };
-  if (xp >= goal) return { name: "Dia de racha!", emoji: "🔥" };
-  if (xp >= goal * 0.5) return { name: "Buen ritmo", emoji: "💪" };
-  if (xp < 0) return { name: "Dia negativo", emoji: "😵" };
-  return { name: "Recien empezando", emoji: "🌱" };
+// ===== XP LEVEL SYSTEM =====
+export function getXpLevel(totalXp: number): { level: number; name: string; emoji: string; progress: number } {
+  const level = Math.floor(totalXp / 500) + 1;
+  const xpInLevel = totalXp % 500;
+  const progress = xpInLevel / 500;
+
+  let name = "Principiante";
+  let emoji = "🌱";
+  if (level >= 50) { name = "Gran Maestro"; emoji = "💎"; }
+  else if (level >= 25) { name = "Maestro"; emoji = "🏅"; }
+  else if (level >= 15) { name = "Experto"; emoji = "⚡"; }
+  else if (level >= 10) { name = "Avanzado"; emoji = "🔥"; }
+  else if (level >= 7) { name = "Dedicado"; emoji = "💪"; }
+  else if (level >= 5) { name = "Consistente"; emoji = "🎯"; }
+  else if (level >= 3) { name = "Aprendiz"; emoji = "📖"; }
+
+  return { level, name, emoji, progress };
 }
 
-function dateOffset(dateStr: string, days: number): string {
-  const d = new Date(dateStr + "T12:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+export function getTotalXp(habits: Habit[], journalEntries: Record<string, JournalEntry>): number {
+  let total = 0;
+  const today = getLocalDate();
+  // Calculate total XP across all days
+  const allDates = new Set<string>();
+  habits.forEach(h => {
+    h.completions?.forEach(d => allDates.add(d));
+    h.skips?.forEach(d => allDates.add(d));
+    Object.keys(h.amounts ?? {}).forEach(d => allDates.add(d));
+  });
+  Object.keys(journalEntries).forEach(d => allDates.add(d));
+  
+  allDates.forEach(date => {
+    total += getDayXp(habits, date, journalEntries[date]);
+  });
+  
+  return Math.max(0, total);
 }
 
-// === DEFAULTS ===
-const today = getLocalDate();
+// ===== ACHIEVEMENTS =====
+export function checkAchievements(
+  habits: Habit[],
+  settings: AppSettings,
+  journalEntries: Record<string, JournalEntry>,
+  currentAchievements: Achievement[]
+): Achievement[] {
+  const unlocked = [...currentAchievements];
+  const streak = getOverallStreak(habits, settings);
+  const totalXp = getTotalXp(habits, journalEntries);
+  const { level } = getXpLevel(totalXp);
+  const today = getLocalDate();
+  const todayXp = getDayXp(habits, today);
 
+  const goal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+
+  // Journal count
+  const journalCount = Object.keys(journalEntries).length;
+
+  // Check each achievement definition
+  const checks: Record<string, () => boolean> = {
+    streak_3: () => streak >= 3,
+    streak_7: () => streak >= 7,
+    streak_14: () => streak >= 14,
+    streak_30: () => streak >= 30,
+    streak_60: () => streak >= 60,
+    streak_100: () => streak >= 100,
+    level_5: () => level >= 5,
+    level_10: () => level >= 10,
+    level_25: () => level >= 25,
+    level_50: () => level >= 50,
+    total_xp_500: () => totalXp >= 500,
+    total_xp_2000: () => totalXp >= 2000,
+    total_xp_5000: () => totalXp >= 5000,
+    total_xp_10000: () => totalXp >= 10000,
+    perfect_week: () => isWeekComplete(habits, settings),
+    all_habits_day: () => {
+      const activeHabits = habits.filter(h => !h.archived);
+      return activeHabits.every(h => {
+        if (h.habitType === "avoid") return !h.completions?.includes(today);
+        if (h.progressive) return (h.amounts?.[today] ?? 0) >= (h.minAmount ?? 1);
+        return h.completions?.includes(today);
+      });
+    },
+    journal_7: () => journalCount >= 7,
+    journal_30: () => journalCount >= 30,
+    avoid_7: () => {
+      return habits.some(h => h.habitType === "avoid" && getHabitStreak(h) >= 7);
+    },
+    avoid_30: () => {
+      return habits.some(h => h.habitType === "avoid" && getHabitStreak(h) >= 30);
+    },
+  };
+
+  let changed = false;
+  ACHIEVEMENT_DEFS.forEach(def => {
+    const existing = unlocked.find(a => a.id === def.id);
+    if (!existing) {
+      // New achievement not in user's list yet
+      if (checks[def.id]?.()) {
+        unlocked.push({ ...def, unlockedAt: today });
+        changed = true;
+      }
+    } else if (!existing.unlockedAt && checks[def.id]?.()) {
+      existing.unlockedAt = today;
+      changed = true;
+    }
+  });
+
+  return unlocked;
+}
+
+export function getNewlyUnlocked(prev: Achievement[], next: Achievement[]): Achievement | null {
+  for (const a of next) {
+    if (a.unlockedAt) {
+      const prevA = prev.find(p => p.id === a.id);
+      if (!prevA?.unlockedAt) return a;
+    }
+  }
+  return null;
+}
+
+// ===== DEFAULTS =====
 export const DEFAULT_HABITS: Habit[] = [
-  { id: "1", name: "Ejercicio", emoji: "🏃", frequency: "daily", xpReward: 30, habitType: "build", progressive: true, unit: "min", minAmount: 5, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "2", name: "Leer", emoji: "📖", frequency: "daily", xpReward: 30, habitType: "build", progressive: true, unit: "min", minAmount: 5, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "3", name: "Meditar", emoji: "🧘", frequency: "weekly", weeklyGoal: 3, xpReward: 20, habitType: "build", progressive: true, unit: "min", minAmount: 5, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "4", name: "Comer bien", emoji: "🥗", frequency: "daily", xpReward: 15, habitType: "build", progressive: false, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "5", name: "Comer mal", emoji: "🍔", frequency: "daily", xpReward: 25, habitType: "avoid", progressive: false, createdAt: today, completions: [], skips: [], archived: false },
-  { id: "6", name: "Celular de mas", emoji: "📱", frequency: "daily", xpReward: 20, habitType: "avoid", progressive: true, unit: "min", minAmount: 0, amounts: {}, createdAt: today, completions: [], skips: [], archived: false },
+  {
+    id: "h1",
+    name: "Ejercicio",
+    emoji: "🏃",
+    habitType: "build",
+    xpReward: 30,
+    progressive: true,
+    unit: "min",
+    minAmount: 10,
+    barrierBonus: 20,
+    amounts: {},
+    completions: [],
+    skips: [],
+  },
+  {
+    id: "h2",
+    name: "Leer",
+    emoji: "📖",
+    habitType: "build",
+    xpReward: 30,
+    progressive: true,
+    unit: "min",
+    minAmount: 5,
+    barrierBonus: 10,
+    amounts: {},
+    completions: [],
+    skips: [],
+  },
+  {
+    id: "h3",
+    name: "Meditar",
+    emoji: "🧘",
+    habitType: "build",
+    xpReward: 20,
+    progressive: true,
+    unit: "min",
+    minAmount: 5,
+    barrierBonus: 10,
+    amounts: {},
+    completions: [],
+    skips: [],
+  },
+  {
+    id: "h4",
+    name: "Comer bien",
+    emoji: "🥗",
+    habitType: "build",
+    xpReward: 25,
+    progressive: false,
+    amounts: {},
+    completions: [],
+    skips: [],
+  },
+  {
+    id: "h5",
+    name: "Comer mal",
+    emoji: "🍔",
+    habitType: "avoid",
+    xpReward: 20,
+    progressive: false,
+    amounts: {},
+    completions: [],
+    skips: [],
+  },
+  {
+    id: "h6",
+    name: "Celular de más",
+    emoji: "📱",
+    habitType: "avoid",
+    xpReward: 15,
+    progressive: false,
+    amounts: {},
+    completions: [],
+    skips: [],
+  },
 ];
 
-export const DEFAULT_SETTINGS: AppSettings = { notificationsEnabled: false, nudgeIntervalHours: 3, dailyXpGoal: 100, autoGoal: true };
-""")
+export const DEFAULT_SETTINGS: AppSettings = {
+  dailyGoal: 50,
+  autoGoal: true,
+  notifications: false,
+  notificationInterval: 180,
+  smartNotifications: true,
+};
+''')
 
-# ============================================================
-# XP HEADER COMPONENT
-# ============================================================
-write("src/app/components/XPHeader.tsx", r"""
-"use client";
-import { getXpLevel } from "../utils";
+    # ========================
+    # src/app/components/XPHeader.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "XPHeader.tsx"), '''import { Habit, JournalEntry, AppSettings } from "../types";
+import { getDayXp, getBarColor, getOverallStreak, getXpLevel, getTotalXp, getLocalDate } from "../utils";
 
-interface XPHeaderProps {
-  todayXp: number;
+interface Props {
+  habits: Habit[];
+  settings: AppSettings;
+  journal: JournalEntry | null;
   effectiveGoal: number;
-  overallStreak: number;
-  autoGoal: boolean;
-  onSettings: () => void;
+  streak: number;
+  journalEntries: Record<string, JournalEntry>;
 }
 
-export default function XPHeader({ todayXp, effectiveGoal, overallStreak, autoGoal, onSettings }: XPHeaderProps) {
-  const barPct = effectiveGoal > 0 ? Math.min(100, Math.max(0, (todayXp / effectiveGoal) * 100)) : 0;
-  const xpPct = effectiveGoal > 0 ? Math.min(150, Math.round((todayXp / effectiveGoal) * 100)) : 0;
-  const level = getXpLevel(todayXp, effectiveGoal);
-  const barBg = todayXp < 0 ? "#ef4444" : todayXp >= effectiveGoal * 1.5 ? "linear-gradient(90deg, #58CC02, #FFD700)" : todayXp >= effectiveGoal ? "#FFD700" : "#58CC02";
+export default function XPHeader({ habits, settings, journal, effectiveGoal, streak, journalEntries }: Props) {
+  const today = getLocalDate();
+  const todayXp = getDayXp(habits, today, journal || undefined);
+  const pct = effectiveGoal > 0 ? Math.min((todayXp / effectiveGoal) * 100, 100) : 0;
+  const barColor = getBarColor(pct);
+  const totalXp = getTotalXp(habits, journalEntries);
+  const { level, name, emoji, progress: levelProgress } = getXpLevel(totalXp);
+  const xpInLevel = totalXp % 500;
 
   return (
-    <div className="bg-[#58CC02] px-4 pt-4 pb-8 text-white">
-      <div className="max-w-md mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-black tracking-tight">🔥 HabitDuo</h1>
-          <div className="flex items-center gap-2">
-            {overallStreak > 0 && <span className="bg-white/20 rounded-xl px-3 py-1.5 text-sm font-bold">🔥 {overallStreak}</span>}
-            <button onClick={onSettings} className="bg-white/20 rounded-xl px-3 py-1.5 text-sm font-bold hover:bg-white/30 transition">⚙️</button>
-          </div>
-        </div>
-        <div className="bg-white/20 rounded-2xl p-4 backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-bold text-lg">{level.emoji} {level.name}</span>
-            <span className="font-black text-2xl">{todayXp} XP</span>
-          </div>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="flex-1 h-5 bg-white/30 rounded-full overflow-hidden relative">
-              {todayXp < 0 ? (
-                <div className="h-full bg-red-500 rounded-full" style={{ width: Math.min(100, Math.abs(barPct)) + "%" }} />
-              ) : (
-                <div className="h-full rounded-full transition-all duration-700 relative overflow-hidden" style={{ width: barPct + "%", background: barBg }}>
-                  {barPct > 15 && <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white drop-shadow">{xpPct}%</span>}
-                </div>
-              )}
+    <div className="px-4 pt-4 pb-2">
+      {/* Global Level */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">{emoji}</span>
+          <div>
+            <div className="text-sm font-bold" style={{ color: "#6c5ce7" }}>
+              Nivel {level} — {name}
+            </div>
+            <div className="text-xs" style={{ color: "#b2bec3" }}>
+              {xpInLevel}/500 XP al siguiente nivel
             </div>
           </div>
-          <div className="flex justify-between text-xs opacity-80">
-            <span>Meta: {effectiveGoal} XP {autoGoal ? "(auto)" : ""}</span>
-            {todayXp >= effectiveGoal * 1.5 && <span className="text-yellow-200 font-bold">⚡ Epico!</span>}
-          </div>
         </div>
+        <div className="text-right">
+          <div className="text-xs" style={{ color: "#b2bec3" }}>XP Total</div>
+          <div className="text-lg font-bold" style={{ color: "#6c5ce7" }}>{totalXp.toLocaleString()}</div>
+        </div>
+      </div>
+
+      {/* Level progress bar */}
+      <div className="w-full h-1.5 rounded-full mb-3" style={{ background: "#2d3436" }}>
+        <div
+          className="h-full rounded-full xp-bar-fill"
+          style={{ width: `${levelProgress * 100}%`, background: "linear-gradient(90deg, #6c5ce7, #a29bfe)" }}
+        />
+      </div>
+
+      {/* Daily XP */}
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold">Hoy: {todayXp} XP</span>
+        <span className="text-xs" style={{ color: "#b2bec3" }}>
+          Meta: {effectiveGoal} XP
+        </span>
+      </div>
+      <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: "#2d3436" }}>
+        <div
+          className="h-full rounded-full xp-bar-fill relative"
+          style={{ width: `${pct}%`, background: barColor }}
+        >
+          {pct >= 100 && (
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-black">
+              ✓
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Streak */}
+      <div className="flex items-center justify-center gap-1 mt-2">
+        <span className="text-lg">🔥</span>
+        <span className="text-sm font-bold" style={{ color: "#fdcb6e" }}>
+          {streak} {streak === 1 ? "día" : "días"} de racha
+        </span>
       </div>
     </div>
   );
 }
-""")
+''')
 
-# ============================================================
-# HABIT CARD COMPONENT
-# ============================================================
-write("src/app/components/HabitCard.tsx", r"""
-"use client";
-import { useState } from "react";
-import { Habit } from "../types";
-import { getLocalDate, getWeekDates, getHabitStreak, isWeekComplete, getHabitXp } from "../utils";
+    # ========================
+    # src/app/components/HabitCard.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "HabitCard.tsx"), '''import { Habit } from "../types";
+import { getHabitXp, getHabitStreak, getCompletionRate, getRateColor, getLocalDate } from "../utils";
 
-interface HabitCardProps {
+interface Props {
   habit: Habit;
   onToggle: (id: string) => void;
   onSkip: (id: string) => void;
-  onUpdateAmount: (id: string, date: string, amount: number) => void;
-  onArchive: (id: string) => void;
+  onUpdateAmount: (id: string, amount: number) => void;
   onDelete: (id: string) => void;
+  onArchive: (id: string) => void;
 }
 
-export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onArchive, onDelete }: HabitCardProps) {
-  const [editing, setEditing] = useState(false);
-  const [showAmountInput, setShowAmountInput] = useState(false);
-  const [customAmount, setCustomAmount] = useState("");
-
+export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onDelete, onArchive }: Props) {
   const today = getLocalDate();
-  const weekDates = getWeekDates();
+  const isCompleted = habit.completions?.includes(today) ?? false;
+  const isSkipped = habit.skips?.includes(today) ?? false;
+  const amount = habit.amounts?.[today] ?? 0;
+  const xp = getHabitXp(habit, today);
   const streak = getHabitStreak(habit);
-  const didIt = habit.completions.includes(today);
-  const isSkipped = habit.skips.includes(today);
-  const weekComps = habit.frequency === "weekly" ? habit.completions.filter((c) => weekDates.includes(c)).length : 0;
-  const weekDone = habit.frequency === "weekly" && isWeekComplete(habit);
-  const todayXp = getHabitXp(habit, today);
-  const amount = habit.amounts?.[today] || 0;
+  const rate = getCompletionRate(habit);
+  const rateColor = getRateColor(rate);
+
+  const isBuild = habit.habitType === "build";
   const isProgressive = habit.progressive;
-  const isAvoid = habit.habitType === "avoid";
+  const minAmount = habit.minAmount ?? 1;
+  const barrierBonus = habit.barrierBonus ?? (minAmount * 2);
+  const unit = habit.unit || "unidades";
 
-  const completed = isAvoid ? didIt : (didIt || weekDone || (isProgressive && amount >= (habit.minAmount || 5)));
+  const reachedMin = isProgressive && amount >= minAmount;
+  const quickAmounts = [5, 10, 15, 30];
 
-  const handleAddAmount = (add: number) => {
-    onUpdateAmount(habit.id, today, amount + add);
-  };
+  // Card background based on state
+  let bgColor = "#1e2a4a";
+  if (isBuild && isProgressive && reachedMin) bgColor = "#1a3a2a";
+  else if (isBuild && !isProgressive && isCompleted) bgColor = "#1a3a2a";
+  else if (!isBuild && !isCompleted && !isSkipped) bgColor = "#1a3a2a";
+  else if (!isBuild && isCompleted) bgColor = "#3a1a1a";
+  else if (isSkipped) bgColor = "#2d2d3a";
 
-  const handleSetAmount = () => {
-    const val = parseInt(customAmount);
-    if (!isNaN(val) && val >= 0) {
-      onUpdateAmount(habit.id, today, val);
-    }
-    setCustomAmount("");
-    setShowAmountInput(false);
-  };
-
-  // Progressive build habit
-  if (isProgressive && !isAvoid) {
-    const minAmt = habit.minAmount || 5;
-    const reached = amount >= minAmt;
-    const progressPct = Math.min(100, (amount / habit.xpReward) * 100);
-    return (
-      <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (reached ? "ring-2 ring-[#58CC02]" : "")}>
-        <div className="flex items-center gap-3">
-          <div className={"w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black transition-all " + (reached ? "bg-[#58CC02] text-white shadow-lg shadow-green-200" : "bg-gray-100 text-gray-400")}>
-            {habit.emoji}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-gray-800">{habit.name}</span>
-              <span className="text-[10px] bg-green-50 text-green-600 rounded-full px-1.5 py-0.5 font-bold">+{todayXp} XP</span>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-[#58CC02] rounded-full transition-all" style={{ width: progressPct + "%" }} />
-              </div>
-              <span className={"text-xs font-bold " + (reached ? "text-[#58CC02]" : "text-gray-400")}>{amount}/{habit.xpReward} {habit.unit || "min"}</span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              {streak > 0 && <span className="text-xs font-bold text-orange-500">🔥 {streak}</span>}
-              {habit.frequency === "weekly" && <span className="text-[10px] text-gray-400">{weekComps}/{habit.weeklyGoal || 3}/sem</span>}
-              {!reached && amount > 0 && <span className="text-[10px] text-amber-500">Minimo: {minAmt} {habit.unit || "min"}</span>}
-              {reached && <span className="text-[10px] text-[#58CC02]">✓ Completado</span>}
-            </div>
-          </div>
-          <button onClick={() => setEditing(!editing)} className="text-gray-300 hover:text-gray-500 transition p-1">⋮</button>
-        </div>
-        <div className="flex gap-2 mt-2">
-          {[5, 10, 15, 30].map((n) => (
-            <button key={n} onClick={() => handleAddAmount(n)} className="flex-1 bg-gray-50 hover:bg-gray-100 rounded-lg py-1.5 text-xs font-bold text-gray-600 transition">+{n}</button>
-          ))}
-          <button onClick={() => setShowAmountInput(!showAmountInput)} className="bg-gray-50 hover:bg-gray-100 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-600 transition">✏️</button>
-        </div>
-        {showAmountInput && (
-          <div className="flex gap-2 mt-2">
-            <input type="number" value={customAmount} onChange={(e) => setCustomAmount(e.target.value)} placeholder={amount.toString()} className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#58CC02]" min="0" />
-            <button onClick={handleSetAmount} className="bg-[#58CC02] text-white font-bold px-4 rounded-lg text-sm">OK</button>
-          </div>
-        )}
-        {editing && (
-          <div className="mt-2 pt-2 border-t border-gray-100 flex gap-2">
-            <button onClick={() => { onArchive(habit.id); setEditing(false); }} className="text-xs bg-blue-50 text-blue-600 rounded-lg px-3 py-1.5 font-medium hover:bg-blue-100">{habit.archived ? "Restaurar" : "Archivar"}</button>
-            <button onClick={() => { onDelete(habit.id); setEditing(false); }} className="text-xs bg-red-50 text-red-600 rounded-lg px-3 py-1.5 font-medium hover:bg-red-100">Eliminar</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Progressive avoid habit
-  if (isProgressive && isAvoid) {
-    const avoided = amount === 0;
-    return (
-      <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (amount > 0 ? "ring-2 ring-red-400 bg-red-50/50" : "ring-2 ring-[#58CC02]")}>
-        <div className="flex items-center gap-3">
-          <div className={"w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-black transition-all " + (amount > 0 ? "bg-red-500 text-white" : "bg-green-50 text-green-500")}>
-            {amount > 0 ? "✗" : "✓"}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className={"font-bold " + (amount > 0 ? "text-red-600" : "text-gray-800")}>{habit.name}</span>
-              <span className={"text-[10px] rounded-full px-1.5 py-0.5 font-bold " + (amount > 0 ? "bg-red-50 text-red-500" : "bg-green-50 text-green-600")}>
-                {amount > 0 ? `${todayXp} XP` : `+${habit.xpReward} XP`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-gray-500">{amount} {habit.unit || "min"}</span>
-              {avoided && <span className="text-xs text-green-500 font-medium">Evitado hoy ✓</span>}
-              {amount > 0 && <span className="text-xs text-red-400 font-medium">Lo hiciste hoy</span>}
-              {streak > 0 && avoided && <span className="text-xs font-bold text-orange-500">🔥 {streak} sin caer</span>}
-            </div>
-          </div>
-          <button onClick={() => setEditing(!editing)} className="text-gray-300 hover:text-gray-500 transition p-1">⋮</button>
-        </div>
-        <div className="flex gap-2 mt-2">
-          {[15, 30, 60].map((n) => (
-            <button key={n} onClick={() => handleAddAmount(n)} className="flex-1 bg-red-50 hover:bg-red-100 rounded-lg py-1.5 text-xs font-bold text-red-500 transition">+{n}</button>
-          ))}
-          <button onClick={() => { onUpdateAmount(habit.id, today, 0); onToggle(habit.id); }} className="bg-green-50 hover:bg-green-100 rounded-lg px-3 py-1.5 text-xs font-bold text-green-600 transition">No lo hice ✓</button>
-        </div>
-        {editing && (
-          <div className="mt-2 pt-2 border-t border-gray-100 flex gap-2">
-            <button onClick={() => { onArchive(habit.id); setEditing(false); }} className="text-xs bg-blue-50 text-blue-600 rounded-lg px-3 py-1.5 font-medium hover:bg-blue-100">{habit.archived ? "Restaurar" : "Archivar"}</button>
-            <button onClick={() => { onDelete(habit.id); setEditing(false); }} className="text-xs bg-red-50 text-red-600 rounded-lg px-3 py-1.5 font-medium hover:bg-red-100">Eliminar</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Simple build habit
-  if (!isAvoid) {
-    return (
-      <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (completed ? "ring-2 ring-[#58CC02] " : "") + (isSkipped ? "opacity-60" : "")}>
-        <div className="flex items-center gap-3">
-          <button onClick={() => onToggle(habit.id)} className={"w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-black transition-all " + (completed ? "bg-[#58CC02] text-white shadow-lg shadow-green-200 scale-105" : "bg-gray-100 text-gray-400 hover:bg-gray-200")}>
-            {completed ? "✓" : habit.emoji}
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className={"font-bold " + (completed ? "line-through text-gray-400" : "text-gray-800")}>{habit.name}</span>
-              <span className="text-[10px] bg-green-50 text-green-600 rounded-full px-1.5 py-0.5 font-bold">+{habit.xpReward}</span>
-            </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] text-gray-400">{habit.frequency === "daily" ? "Diario" : "Semanal"}</span>
-              {streak > 0 && <span className="text-xs font-bold text-orange-500">🔥 {streak}</span>}
-              {habit.frequency === "weekly" && <span className="text-[10px] text-gray-400">{weekComps}/{habit.weeklyGoal || 3}/sem</span>}
-              {isSkipped && <span className="text-xs text-amber-500">⏭</span>}
-            </div>
-          </div>
-          <div className="flex gap-1">
-            {!completed && habit.frequency === "weekly" && !isSkipped && <button onClick={() => onSkip(habit.id)} className="text-xs bg-amber-50 text-amber-600 rounded-lg px-2 py-1 font-medium hover:bg-amber-100 transition">⏭</button>}
-            <button onClick={() => setEditing(!editing)} className="text-gray-300 hover:text-gray-500 transition p-1">⋮</button>
-          </div>
-        </div>
-        {editing && (
-          <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2">
-            <button onClick={() => { onArchive(habit.id); setEditing(false); }} className="text-xs bg-blue-50 text-blue-600 rounded-lg px-3 py-1.5 font-medium hover:bg-blue-100">{habit.archived ? "Restaurar" : "Archivar"}</button>
-            <button onClick={() => { onDelete(habit.id); setEditing(false); }} className="text-xs bg-red-50 text-red-600 rounded-lg px-3 py-1.5 font-medium hover:bg-red-100">Eliminar</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Simple avoid habit
   return (
-    <div className={"bg-white rounded-2xl shadow-md p-4 transition-all " + (didIt ? "ring-2 ring-red-400 bg-red-50/50" : "ring-2 ring-[#58CC02]")}>
-      <div className="flex items-center gap-3">
-        <button onClick={() => onToggle(habit.id)} className={"w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-black transition-all " + (didIt ? "bg-red-500 text-white shadow-lg shadow-red-200 scale-105" : "bg-green-50 text-green-500")}>
-          {didIt ? "✗" : "✓"}
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={"font-bold " + (didIt ? "text-red-600" : "text-gray-800")}>{habit.name}</span>
-            {didIt ? (
-              <span className="text-[10px] bg-red-50 text-red-500 rounded-full px-1.5 py-0.5 font-bold">-{habit.xpReward} XP</span>
-            ) : (
-              <span className="text-[10px] bg-green-50 text-green-600 rounded-full px-1.5 py-0.5 font-bold">+{habit.xpReward} XP</span>
+    <div
+      className="habit-card rounded-xl p-4 mb-3"
+      style={{ background: bgColor, border: "1px solid rgba(255,255,255,0.05)" }}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">{habit.emoji}</span>
+          <div>
+            <div className="font-semibold text-sm">{habit.name}</div>
+            <div className="text-xs" style={{ color: "#b2bec3" }}>
+              {isBuild ? "Construir" : "Evitar"} · {habit.xpReward} XP max
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Streak */}
+          {streak > 1 && (
+            <span className="text-xs" style={{ color: "#fdcb6e" }}>
+              🔥{streak}
+            </span>
+          )}
+          {/* XP earned today */}
+          <span
+            className="text-sm font-bold"
+            style={{ color: xp > 0 ? "#00b894" : xp < 0 ? "#e17055" : "#b2bec3" }}
+          >
+            {xp > 0 ? `+${xp}` : xp < 0 ? `${xp}` : "0"} XP
+          </span>
+        </div>
+      </div>
+
+      {/* Completion rate bar */}
+      <div className="w-full h-1.5 rounded-full mb-2" style={{ background: "#2d3436" }}>
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${rate * 100}%`, background: rateColor }}
+        />
+      </div>
+
+      {/* Progressive build habit */}
+      {isBuild && isProgressive && (
+        <div>
+          {/* Barrier bonus info */}
+          <div className="text-xs mb-2 px-1" style={{ color: "#b2bec3" }}>
+            <span style={{ color: "#fdcb6e" }}>⚡ Bonus barrera:</span>{" "}
+            {minAmount} {unit} = {barrierBonus} XP, luego +1 XP/{unit}
+          </div>
+
+          {/* Current amount display */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg font-bold" style={{ color: reachedMin ? "#00b894" : "#e17055" }}>
+              {amount}
+            </span>
+            <span className="text-xs" style={{ color: "#b2bec3" }}>
+              / {minAmount} {unit} mínimo
+            </span>
+            {reachedMin && <span className="text-xs">✅</span>}
+            {!reachedMin && amount > 0 && (
+              <span className="text-xs" style={{ color: "#fdcb6e" }}>
+                Faltan {minAmount - amount} {unit}
+              </span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] text-gray-400">Diario</span>
-            {didIt && <span className="text-xs text-red-400">Lo hiciste hoy</span>}
-            {!didIt && <span className="text-xs text-green-500">Evitado hoy ✓</span>}
-            {streak > 0 && !didIt && <span className="text-xs font-bold text-orange-500">🔥 {streak} sin caer</span>}
+
+          {/* Quick add buttons */}
+          <div className="flex gap-2 mb-2">
+            {quickAmounts.map((qa) => (
+              <button
+                key={qa}
+                onClick={() => onUpdateAmount(habit.id, amount + qa)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{
+                  background: reachedMin ? "#00b894" : "#6c5ce7",
+                  color: "white",
+                }}
+              >
+                +{qa} {unit}
+              </button>
+            ))}
           </div>
-        </div>
-        <button onClick={() => setEditing(!editing)} className="text-gray-300 hover:text-gray-500 transition p-1">⋮</button>
-      </div>
-      {editing && (
-        <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2">
-          <button onClick={() => { onArchive(habit.id); setEditing(false); }} className="text-xs bg-blue-50 text-blue-600 rounded-lg px-3 py-1.5 font-medium hover:bg-blue-100">{habit.archived ? "Restaurar" : "Archivar"}</button>
-          <button onClick={() => { onDelete(habit.id); setEditing(false); }} className="text-xs bg-red-50 text-red-600 rounded-lg px-3 py-1.5 font-medium hover:bg-red-100">Eliminar</button>
+
+          {/* Custom amount input */}
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              type="number"
+              min={0}
+              value={amount}
+              onChange={(e) => onUpdateAmount(habit.id, Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-20 px-2 py-1 rounded text-sm text-black"
+              placeholder="0"
+            />
+            <span className="text-xs" style={{ color: "#b2bec3" }}>{unit}</span>
+            {amount > 0 && (
+              <button
+                onClick={() => onUpdateAmount(habit.id, 0)}
+                className="text-xs px-2 py-1 rounded"
+                style={{ background: "#e17055", color: "white" }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
+          {/* XP breakdown for progressive */}
+          {amount > 0 && (
+            <div className="text-xs px-1" style={{ color: "#b2bec3" }}>
+              {reachedMin ? (
+                <>
+                  Barrera ({minAmount} {unit}): <span style={{ color: "#00b894" }}>+{barrierBonus} XP</span>
+                  {amount > minAmount && (
+                    <> · Extra ({amount - minAmount} {unit}): <span style={{ color: "#74b9ff" }}>+{amount - minAmount} XP</span></>
+                  )}
+                  <> · Total: <span style={{ color: "#fdcb6e" }}>{xp} XP</span></>
+                </>
+              ) : (
+                <>
+                  Aún no rompiste la barrera ({amount}/{minAmount} {unit}). ¡Faltan {minAmount - amount} {unit} para {barrierBonus} XP!
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
+
+      {/* Simple build habit */}
+      {isBuild && !isProgressive && (
+        <button
+          onClick={() => onToggle(habit.id)}
+          className="w-full py-2.5 rounded-lg font-bold text-sm transition-all"
+          style={{
+            background: isCompleted ? "#00b894" : "#6c5ce7",
+            color: "white",
+          }}
+        >
+          {isCompleted ? "✓ Completado" : `Completar (+${habit.xpReward} XP)`}
+        </button>
+      )}
+
+      {/* Avoid habit */}
+      {!isBuild && (
+        <div>
+          <button
+            onClick={() => onToggle(habit.id)}
+            className="w-full py-2.5 rounded-lg font-bold text-sm transition-all"
+            style={{
+              background: isCompleted ? "#e17055" : "#2d3436",
+              color: isCompleted ? "white" : "#b2bec3",
+              border: isCompleted ? "none" : "1px solid #e17055",
+            }}
+          >
+            {isCompleted
+              ? `😔 Caí (-${habit.xpReward} XP)`
+              : `🛡 Evitado (+${habit.xpReward} XP)`}
+          </button>
+          {!isCompleted && (
+            <div className="text-xs text-center mt-1" style={{ color: "#00b894" }}>
+              ¡Vas bien! No caíste hoy.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="flex gap-2">
+          {!isSkipped && !isCompleted && isBuild && !isProgressive && (
+            <button
+              onClick={() => onSkip(habit.id)}
+              className="text-xs px-2 py-1 rounded"
+              style={{ background: "#2d3436", color: "#b2bec3" }}
+            >
+              Saltar
+            </button>
+          )}
+          {!isSkipped && !reachedMin && isBuild && isProgressive && (
+            <button
+              onClick={() => onSkip(habit.id)}
+              className="text-xs px-2 py-1 rounded"
+              style={{ background: "#2d3436", color: "#b2bec3" }}
+            >
+              Saltar
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onArchive(habit.id)}
+            className="text-xs px-2 py-1 rounded"
+            style={{ background: "#2d3436", color: "#b2bec3" }}
+          >
+            Archivar
+          </button>
+          <button
+            onClick={() => {
+              if (confirm("¿Eliminar este hábito?")) onDelete(habit.id);
+            }}
+            className="text-xs px-2 py-1 rounded"
+            style={{ background: "#2d3436", color: "#e17055" }}
+          >
+            Eliminar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
-""")
+''')
 
-# ============================================================
-# INSIGHTS SCREEN
-# ============================================================
-write("src/app/components/InsightsScreen.tsx", r"""
-"use client";
-import { useState } from "react";
-import { Habit, JournalEntry, AppSettings } from "../types";
-import { getDayXp, getHabitStreak, getCompletionRate, getRateColor, getRateBarColor, getRateLabel, getLocalDate, getWeekDates, calcAutoGoal } from "../utils";
+    # ========================
+    # src/app/components/InsightsScreen.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "InsightsScreen.tsx"), '''import { useState } from "react";
+import { Habit, JournalEntry, AppSettings, Achievement } from "../types";
+import { getWeekDates, getDayXp, getHabitStreak, getCompletionRate, getRateColor, getRateLabel, getLocalDate, getXpLevel, getTotalXp, getOverallStreak, ACHIEVEMENT_DEFS } from "../utils";
 
-interface InsightsScreenProps {
+interface Props {
   habits: Habit[];
-  journal: JournalEntry[];
   settings: AppSettings;
-  effectiveGoal: number;
+  journalEntries: Record<string, JournalEntry>;
+  achievements: Achievement[];
 }
 
-export default function InsightsScreen({ habits, journal, settings, effectiveGoal }: InsightsScreenProps) {
-  const [tab, setTab] = useState<"overview" | "strategy">("overview");
+export default function InsightsScreen({ habits, settings, journalEntries, achievements }: Props) {
+  const [tab, setTab] = useState<"overview" | "strategy" | "achievements">("overview");
   const today = getLocalDate();
+  const dates = getWeekDates();
   const activeHabits = habits.filter((h) => !h.archived);
-  const weekDates = getWeekDates();
-  const weekData = weekDates.map((date) => ({ date, xp: getDayXp(habits, journal, date) }));
-  const overallStreak = (() => { let s = 0; for (let i = 0; i < 365; i++) { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - i); const ds = d.toISOString().split("T")[0]; if (getDayXp(habits, journal, ds) >= effectiveGoal) s++; else break; } return s; })();
-  const totalXpAllTime = habits.reduce((acc, h) => h.habitType === "build" ? acc + h.completions.length * h.xpReward : acc - h.completions.length * h.xpReward, 0) + journal.length * 15;
-
-  const habitRates = activeHabits.map((h) => ({ habit: h, rate: getCompletionRate(h) })).sort((a, b) => a.rate - b.rate);
-  const hardest = habitRates.filter((h) => h.rate < 60);
-  const easiest = habitRates.filter((h) => h.rate >= 80);
-  const avgRate = habitRates.length > 0 ? Math.round(habitRates.reduce((s, h) => s + h.rate, 0) / habitRates.length) : 0;
+  const totalXp = getTotalXp(habits, journalEntries);
+  const { level, name, emoji, progress } = getXpLevel(totalXp);
+  const streak = getOverallStreak(habits, settings);
 
   return (
-    <div className="space-y-4">
-      <div className="flex bg-white rounded-2xl shadow-md overflow-hidden">
-        <button onClick={() => setTab("overview")} className={"flex-1 py-2.5 text-sm font-bold transition " + (tab === "overview" ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>📊 Resumen</button>
-        <button onClick={() => setTab("strategy")} className={"flex-1 py-2.5 text-sm font-bold transition " + (tab === "strategy" ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>🎯 Estrategia</button>
+    <div className="px-4 pb-20">
+      {/* Tabs */}
+      <div className="flex gap-1 mb-4 p-1 rounded-lg" style={{ background: "#16213e" }}>
+        {(["overview", "strategy", "achievements"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+            style={{
+              background: tab === t ? "#6c5ce7" : "transparent",
+              color: tab === t ? "white" : "#b2bec3",
+            }}
+          >
+            {t === "overview" ? "Resumen" : t === "strategy" ? "Estrategia" : "Logros"}
+          </button>
+        ))}
       </div>
 
-      {tab === "overview" && (<>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-2xl shadow-md p-4 text-center"><div className="text-3xl font-black text-[#58CC02]">{overallStreak}</div><div className="text-xs text-gray-500 font-medium">Racha actual 🔥</div></div>
-          <div className="bg-white rounded-2xl shadow-md p-4 text-center"><div className={"text-3xl font-black " + (totalXpAllTime >= 0 ? "text-blue-500" : "text-red-500")}>{totalXpAllTime}</div><div className="text-xs text-gray-500 font-medium">XP totales ⭐</div></div>
-          <div className="bg-white rounded-2xl shadow-md p-4 text-center"><div className="text-3xl font-black text-purple-500">{activeHabits.filter((h) => h.habitType === "build").length}/{activeHabits.filter((h) => h.habitType === "avoid").length}</div><div className="text-xs text-gray-500 font-medium">Construir/Evitar</div></div>
-          <div className="bg-white rounded-2xl shadow-md p-4 text-center"><div className="text-3xl font-black text-orange-500">{journal.length}</div><div className="text-xs text-gray-500 font-medium">Entradas diario 📝</div></div>
-        </div>
-        <div className="bg-white rounded-2xl shadow-md p-4">
-          <h3 className="font-bold text-gray-800 mb-3">📊 XP por dia</h3>
-          <div className="flex justify-between items-end h-28">
-            {weekData.map((d, i) => {
-              const dayName = new Date(d.date + "T12:00:00").toLocaleDateString("es", { weekday: "short" });
-              const maxXP = Math.max(...weekData.map((w) => Math.abs(w.xp)), effectiveGoal);
-              const absH = Math.max((Math.abs(d.xp) / maxXP) * 100, 3);
-              const isToday = d.date === today;
-              const hitGoal = d.xp >= effectiveGoal;
-              const isNeg = d.xp < 0;
-              return (
-                <div key={i} className="flex flex-col items-center gap-1 flex-1">
-                  <span className={"text-[9px] font-bold " + (isNeg ? "text-red-400" : "text-gray-400")}>{d.xp}</span>
-                  <div className="w-full max-w-[28px]" style={{ height: absH + "%" }}>
-                    <div className={"w-full h-full rounded-lg " + (hitGoal ? "bg-[#58CC02]" : isNeg ? "bg-red-400" : isToday ? "bg-blue-300" : "bg-gray-200")} />
+      {tab === "overview" && (
+        <div>
+          {/* Weekly XP Chart */}
+          <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+            <h3 className="text-sm font-bold mb-3">XP Semanal</h3>
+            <div className="flex items-end gap-2" style={{ height: 120 }}>
+              {dates.map((d) => {
+                const dayXp = getDayXp(habits, d, journalEntries[d]);
+                const maxDayXp = Math.max(...dates.map((dd) => getDayXp(habits, dd, journalEntries[dd])), 1);
+                const h = Math.max((dayXp / maxDayXp) * 100, 4);
+                const isToday = d === today;
+                const dayName = new Date(d + "T12:00:00").toLocaleDateString("es-AR", { weekday: "short" });
+                return (
+                  <div key={d} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-[10px]" style={{ color: "#b2bec3" }}>{dayXp}</span>
+                    <div
+                      className="w-full rounded-t"
+                      style={{
+                        height: `${h}%`,
+                        background: isToday ? "#6c5ce7" : dayXp > 0 ? "#00b894" : "#2d3436",
+                      }}
+                    />
+                    <span className={`text-[10px] ${isToday ? "font-bold" : ""}`} style={{ color: isToday ? "#6c5ce7" : "#b2bec3" }}>
+                      {dayName}
+                    </span>
                   </div>
-                  <span className={"text-[10px] font-bold " + (isToday ? "text-[#58CC02]" : "text-gray-400")}>{dayName}</span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-xl p-3" style={{ background: "#1e2a4a" }}>
+              <div className="text-xs" style={{ color: "#b2bec3" }}>XP Total</div>
+              <div className="text-xl font-bold" style={{ color: "#6c5ce7" }}>{totalXp.toLocaleString()}</div>
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "#1e2a4a" }}>
+              <div className="text-xs" style={{ color: "#b2bec3" }}>Nivel</div>
+              <div className="text-xl font-bold" style={{ color: "#fdcb6e" }}>{emoji} {level}</div>
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "#1e2a4a" }}>
+              <div className="text-xs" style={{ color: "#b2bec3" }}>Racha</div>
+              <div className="text-xl font-bold" style={{ color: "#fdcb6e" }}>🔥 {streak}</div>
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "#1e2a4a" }}>
+              <div className="text-xs" style={{ color: "#b2bec3" }}>Hábitos Activos</div>
+              <div className="text-xl font-bold">{activeHabits.length}</div>
+            </div>
+          </div>
+
+          {/* Habit breakdown */}
+          <div className="rounded-xl p-4" style={{ background: "#1e2a4a" }}>
+            <h3 className="text-sm font-bold mb-3">Por Hábito</h3>
+            {activeHabits.map((h) => {
+              const rate = getCompletionRate(h);
+              const hStreak = getHabitStreak(h);
+              return (
+                <div key={h.id} className="flex items-center justify-between py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <div className="flex items-center gap-2">
+                    <span>{h.emoji}</span>
+                    <span className="text-sm">{h.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-16 h-1.5 rounded-full" style={{ background: "#2d3436" }}>
+                      <div className="h-full rounded-full" style={{ width: `${rate * 100}%`, background: getRateColor(rate) }} />
+                    </div>
+                    <span className="text-xs" style={{ color: "#b2bec3" }}>
+                      {Math.round(rate * 100)}%
+                    </span>
+                    {hStreak > 1 && (
+                      <span className="text-xs" style={{ color: "#fdcb6e" }}>🔥{hStreak}</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
-        <div className="bg-white rounded-2xl shadow-md p-4">
-          <h3 className="font-bold text-gray-800 mb-3">🔥 Rachas</h3>
-          {activeHabits.map((h) => (
-            <div key={h.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">{h.emoji} {h.name}</span>
-                <span className={"text-[10px] font-bold " + (h.habitType === "avoid" ? "text-red-400" : "text-[#58CC02]")}>{h.habitType === "avoid" ? "-" : "+"}{h.xpReward}</span>
-              </div>
-              <span className="font-bold text-orange-500">{getHabitStreak(h)} {h.habitType === "avoid" ? "sin caer" : "dias"}</span>
-            </div>
-          ))}
-        </div>
-      </>)}
+      )}
 
-      {tab === "strategy" && (<>
-        <div className="bg-white rounded-2xl shadow-md p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-bold text-gray-800">🎯 Tu rendimiento</h3>
-            <span className={"font-black text-lg " + getRateColor(avgRate)}>{avgRate}%</span>
+      {tab === "strategy" && (
+        <div>
+          {/* Tips based on data */}
+          <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+            <h3 className="text-sm font-bold mb-3">Consejos Personalizados</h3>
+            {(() => {
+              const tips: string[] = [];
+              const easiest = activeHabits.reduce((best, h) =>
+                getCompletionRate(h) > getCompletionRate(best) ? h : best, activeHabits[0]);
+              const hardest = activeHabits.reduce((worst, h) =>
+                getCompletionRate(h) < getCompletionRate(worst) ? h : worst, activeHabits[0]);
+
+              if (hardest) tips.push(`${hardest.emoji} ${hardest.name} es tu hábito más difícil (${Math.round(getCompletionRate(hardest) * 100)}%). Intentá reducir la barrera de inicio.`);
+              if (easiest) tips.push(`${easiest.emoji} ${easiest.name} es tu hábito más fuerte (${Math.round(getCompletionRate(easiest) * 100)}%). ¡Seguí así!`);
+              if (streak < 3) tips.push("💡 Hacé el hábito más fácil primero. La clave es arrancar, no la cantidad.");
+              if (streak >= 7) tips.push("💪 Ya pasaste la primera semana. Tu cerebro está creando autopista.");
+              if (streak >= 30) tips.push("🏆 Un mes completo. Este hábito ya es parte de tu identidad.");
+
+              return tips.map((tip, i) => (
+                <p key={i} className="text-sm mb-2" style={{ color: "#dfe6e9" }}>{tip}</p>
+              ));
+            })()}
           </div>
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-            <div className={"h-full rounded-full " + getRateBarColor(avgRate)} style={{ width: avgRate + "%" }} />
-          </div>
-          <p className="text-xs text-gray-400 mt-2">{getRateLabel(avgRate)} en promedio</p>
-        </div>
-        {hardest.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-md p-4">
-            <h3 className="font-bold text-red-500 mb-1">💪 Los que mas te cuestan</h3>
-            <p className="text-xs text-gray-400 mb-3">Enfocate en estos para mejorar</p>
-            <div className="space-y-3">
-              {hardest.map(({ habit, rate }) => (
-                <div key={habit.id} className="space-y-1">
-                  <div className="flex items-center justify-between">
+
+          {/* Ranking */}
+          <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+            <h3 className="text-sm font-bold mb-3">Ranking de Consistencia</h3>
+            {[...activeHabits]
+              .sort((a, b) => getCompletionRate(b) - getCompletionRate(a))
+              .map((h, i) => {
+                const rate = getCompletionRate(h);
+                return (
+                  <div key={h.id} className="flex items-center justify-between py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                     <div className="flex items-center gap-2">
-                      <span className="text-lg">{habit.emoji}</span>
-                      <span className="font-medium text-gray-800 text-sm">{habit.name}</span>
-                      <span className={"text-[10px] rounded-full px-1.5 py-0.5 font-bold " + (habit.habitType === "avoid" ? "bg-red-50 text-red-500" : "bg-green-50 text-green-600")}>{habit.habitType === "avoid" ? "Evitar" : "Construir"}</span>
+                      <span className="text-xs font-bold" style={{ color: i === 0 ? "#fdcb6e" : "#b2bec3" }}>
+                        #{i + 1}
+                      </span>
+                      <span>{h.emoji}</span>
+                      <span className="text-sm">{h.name}</span>
                     </div>
-                    <span className={"font-black text-sm " + getRateColor(rate)}>{rate}%</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs" style={{ color: getRateColor(rate) }}>
+                        {getRateLabel(rate)}
+                      </span>
+                      <span className="text-xs font-bold" style={{ color: getRateColor(rate) }}>
+                        {Math.round(rate * 100)}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className={"h-full rounded-full " + getRateBarColor(rate)} style={{ width: rate + "%" }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {easiest.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-md p-4">
-            <h3 className="font-bold text-[#58CC02] mb-1">⭐ Los que te salen facil</h3>
-            <div className="space-y-3">
-              {easiest.map(({ habit, rate }) => (
-                <div key={habit.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2"><span className="text-lg">{habit.emoji}</span><span className="font-medium text-gray-800 text-sm">{habit.name}</span></div>
-                    <span className="font-black text-sm text-[#58CC02]">{rate}%</span>
-                  </div>
-                  <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden mt-1"><div className="h-full rounded-full bg-[#58CC02]" style={{ width: rate + "%" }} /></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="bg-white rounded-2xl shadow-md p-4">
-          <h3 className="font-bold text-gray-800 mb-3">📊 Ranking completo</h3>
-          <div className="space-y-2">
-            {habitRates.map(({ habit, rate }, i) => (
-              <div key={habit.id} className="flex items-center gap-3">
-                <span className={"w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white " + (i === 0 ? "bg-red-400" : i === habitRates.length - 1 ? "bg-[#58CC02]" : "bg-gray-300")}>{i + 1}</span>
-                <span className="text-sm">{habit.emoji}</span>
-                <span className="flex-1 font-medium text-gray-700 text-sm">{habit.name}</span>
-                <span className={"text-[10px] font-bold " + (habit.habitType === "avoid" ? "text-red-400" : "text-green-500")}>{habit.habitType === "avoid" ? "EVITAR" : "BUILD"}</span>
-                <div className="w-16 h-2 bg-gray-100 rounded-full overflow-hidden"><div className={"h-full rounded-full " + getRateBarColor(rate)} style={{ width: rate + "%" }} /></div>
-                <span className={"font-bold text-sm w-10 text-right " + getRateColor(rate)}>{rate}%</span>
-              </div>
-            ))}
+                );
+              })}
           </div>
         </div>
-        {hardest.length > 0 && (
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl shadow-md p-4 border border-amber-100">
-            <h3 className="font-bold text-amber-700 mb-1">💡 Consejo</h3>
-            <p className="text-sm text-amber-600">
-              Tu habito mas dificil es <strong>{hardest[0].habit.emoji} {hardest[0].habit.name}</strong> ({hardest[0].rate}%).
-              {hardest[0].habit.habitType === "avoid" ? " Identifica que lo dispara y busca un reemplazo." : hardest[0].rate < 30 ? " Reduci la dificultad o cambialo a semanal." : " Vas por buen camino, un poco mas de constancia!"}
-            </p>
+      )}
+
+      {tab === "achievements" && (
+        <div>
+          <div className="text-center mb-4">
+            <div className="text-3xl mb-1">{emoji}</div>
+            <div className="text-sm font-bold" style={{ color: "#6c5ce7" }}>
+              {achievements.filter(a => a.unlockedAt).length}/{ACHIEVEMENT_DEFS.length} Desbloqueados
+            </div>
           </div>
-        )}
-      </>)}
+          <div className="grid grid-cols-1 gap-2">
+            {ACHIEVEMENT_DEFS.map((def) => {
+              const unlocked = achievements.find(a => a.id === def.id)?.unlockedAt;
+              return (
+                <div
+                  key={def.id}
+                  className="rounded-xl p-3 flex items-center gap-3"
+                  style={{
+                    background: unlocked ? "#1a3a2a" : "#1e2a4a",
+                    opacity: unlocked ? 1 : 0.5,
+                    border: unlocked ? "1px solid rgba(0,184,148,0.3)" : "1px solid rgba(255,255,255,0.05)",
+                  }}
+                >
+                  <span className="text-2xl">{unlocked ? def.emoji : "🔒"}</span>
+                  <div className="flex-1">
+                    <div className="text-sm font-bold">{def.name}</div>
+                    <div className="text-xs" style={{ color: "#b2bec3" }}>{def.description}</div>
+                  </div>
+                  {unlocked && (
+                    <span className="text-xs" style={{ color: "#00b894" }}>✓</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-""")
+''')
 
-# ============================================================
-# JOURNAL SCREEN
-# ============================================================
-write("src/app/components/JournalScreen.tsx", r"""
-"use client";
-import { JournalEntry } from "../types";
-import { MOOD_EMOJIS, MOOD_LABELS } from "../types";
+    # ========================
+    # src/app/components/JournalScreen.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "JournalScreen.tsx"), '''import { useState } from "react";
+import { JournalEntry, MOOD_EMOJIS, MOOD_LABELS } from "../types";
+import { getLocalDate } from "../utils";
 
-interface JournalScreenProps {
-  journal: JournalEntry[];
-  todayMood: number;
-  todayNote: string;
-  onSetMood: (m: number) => void;
-  onSetNote: (n: string) => void;
-  onSave: () => void;
+interface Props {
+  entry: JournalEntry | null;
+  onSave: (entry: JournalEntry) => void;
 }
 
-export default function JournalScreen({ journal, todayMood, todayNote, onSetMood, onSetNote, onSave }: JournalScreenProps) {
+export default function JournalScreen({ entry, onSave }: Props) {
+  const today = getLocalDate();
+  const [mood, setMood] = useState(entry?.mood ?? 2);
+  const [text, setText] = useState(entry?.text ?? "");
+  const [saved, setSaved] = useState(!!entry);
+
+  const handleSave = () => {
+    if (!text.trim()) return;
+    onSave({ mood, text: text.trim(), xp: 15 });
+    setSaved(true);
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-md p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-gray-800">Como te sentis hoy?</h3>
-          <span className="text-xs bg-[#58CC02]/10 text-[#58CC02] font-bold px-2 py-1 rounded-lg">+15 XP</span>
-        </div>
-        <div className="flex justify-between mb-3">
-          {MOOD_EMOJIS.map((emoji, i) => (
-            <button key={i} onClick={() => onSetMood(i + 1)} className={"text-3xl transition-all " + (todayMood === i + 1 ? "scale-125 drop-shadow-lg" : "opacity-40 hover:opacity-70")}>{emoji}</button>
+    <div className="px-4 pb-20">
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">¿Cómo estás hoy?</h3>
+        <div className="flex gap-2 mb-4">
+          {MOOD_EMOJIS.map((e, i) => (
+            <button
+              key={i}
+              onClick={() => { setMood(i); setSaved(false); }}
+              className="flex-1 py-2 rounded-lg text-center transition-all"
+              style={{
+                background: mood === i ? "#6c5ce7" : "#2d3436",
+                transform: mood === i ? "scale(1.1)" : "scale(1)",
+              }}
+            >
+              <div className="text-xl">{e}</div>
+              <div className="text-[10px]" style={{ color: "#b2bec3" }}>{MOOD_LABELS[i]}</div>
+            </button>
           ))}
         </div>
-        {todayMood > 0 && <p className="text-center text-sm text-gray-500 mb-3">{MOOD_LABELS[todayMood - 1]}</p>}
-        <textarea value={todayNote} onChange={(e) => onSetNote(e.target.value)} placeholder="Escribi algo sobre tu dia..." className="w-full bg-gray-50 rounded-xl p-3 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-[#58CC02]" />
-        <button onClick={onSave} disabled={todayMood === 0} className="mt-3 w-full bg-[#58CC02] text-white font-bold py-2.5 rounded-xl disabled:opacity-40 hover:bg-[#4fb002] transition">Guardar entrada</button>
       </div>
-      <div className="space-y-2">
-        {journal.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7).map((entry) => (
-          <div key={entry.date} className="bg-white rounded-2xl shadow-md p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-2xl">{MOOD_EMOJIS[entry.mood - 1]}</span>
-              <span className="font-bold text-gray-700">{entry.date}</span>
-              <span className="text-xs text-[#58CC02] font-bold">+15 XP</span>
-            </div>
-            {entry.note && <p className="text-sm text-gray-500 ml-9">{entry.note}</p>}
-          </div>
-        ))}
+
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Diario (+15 XP)</h3>
+        <textarea
+          value={text}
+          onChange={(e) => { setText(e.target.value); setSaved(false); }}
+          placeholder="¿Qué pasó hoy? ¿Qué aprendiste?"
+          className="w-full h-32 p-3 rounded-lg text-sm resize-none"
+          style={{ background: "#2d3436", color: "#dfe6e9", border: "1px solid rgba(255,255,255,0.1)" }}
+        />
+        <button
+          onClick={handleSave}
+          disabled={!text.trim() || saved}
+          className="w-full mt-3 py-2.5 rounded-lg font-bold text-sm transition-all"
+          style={{
+            background: saved ? "#2d3436" : "#6c5ce7",
+            color: saved ? "#b2bec3" : "white",
+          }}
+        >
+          {saved ? "✓ Guardado (+15 XP)" : "Guardar (+15 XP)"}
+        </button>
       </div>
     </div>
   );
 }
-""")
+''')
 
-# ============================================================
-# SETTINGS SCREEN
-# ============================================================
-write("src/app/components/SettingsScreen.tsx", r"""
-"use client";
-import { AppSettings, Habit } from "../types";
-import { calcAutoGoal, getMaxPossibleXp, DEFAULT_SETTINGS } from "../utils";
+    # ========================
+    # src/app/components/SettingsScreen.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "SettingsScreen.tsx"), '''import { AppSettings, Habit } from "../types";
+import { calcAutoGoal, getMaxPossibleXp } from "../utils";
 
-interface SettingsScreenProps {
+interface Props {
   settings: AppSettings;
   habits: Habit[];
   onUpdateSettings: (s: AppSettings) => void;
@@ -762,208 +1542,398 @@ interface SettingsScreenProps {
   onReset: () => void;
 }
 
-export default function SettingsScreen({ settings, habits, onUpdateSettings, onExport, onImport, onReset }: SettingsScreenProps) {
+export default function SettingsScreen({ settings, habits, onUpdateSettings, onExport, onImport, onReset }: Props) {
   const autoGoal = calcAutoGoal(habits);
-  const maxPossible = getMaxPossibleXp(habits);
+  const maxXp = getMaxPossibleXp(habits);
 
   return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-md p-4">
-        <h3 className="font-bold text-gray-800 mb-4">⚙️ Configuracion</h3>
-        <div className="flex items-center justify-between py-3 border-b border-gray-100">
-          <div><div className="font-medium text-gray-800">🔔 Notificaciones</div><div className="text-xs text-gray-400">Recordatorios para tus habitos</div></div>
-          <button onClick={() => onUpdateSettings({ ...settings, notificationsEnabled: !settings.notificationsEnabled })} className={"w-14 h-8 rounded-full transition-all relative " + (settings.notificationsEnabled ? "bg-[#58CC02]" : "bg-gray-300")}>
-            <div className={"w-6 h-6 bg-white rounded-full absolute top-1 transition-all shadow " + (settings.notificationsEnabled ? "left-7" : "left-1")} />
+    <div className="px-4 pb-20">
+      {/* Notifications */}
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Notificaciones</h3>
+        <div className="flex items-center justify-between py-2">
+          <span className="text-sm">Notificaciones inteligentes</span>
+          <button
+            onClick={() => onUpdateSettings({ ...settings, notifications: !settings.notifications, smartNotifications: !settings.notifications })}
+            className="w-12 h-6 rounded-full transition-all"
+            style={{ background: settings.notifications ? "#00b894" : "#2d3436" }}
+          >
+            <div
+              className="w-5 h-5 rounded-full bg-white transition-transform"
+              style={{ transform: settings.notifications ? "translateX(26px)" : "translateX(2px)" }}
+            />
           </button>
         </div>
-        <div className="py-3 border-b border-gray-100">
-          <div className="font-medium text-gray-800 mb-1">⏰ Intervalo</div>
-          <div className="flex gap-2 mt-1">
-            {[1, 2, 3, 6, 12].map((h) => (
-              <button key={h} onClick={() => onUpdateSettings({ ...settings, nudgeIntervalHours: h })} className={"px-3 py-1.5 rounded-lg text-sm font-bold transition " + (settings.nudgeIntervalHours === h ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{h}h</button>
-            ))}
+        {settings.notifications && (
+          <div className="mt-2 p-3 rounded-lg text-xs" style={{ background: "#2d3436", color: "#b2bec3" }}>
+            <div className="mb-1">🔔 Notificaciones inteligentes:</div>
+            <div>· 18:00 — Racha en riesgo</div>
+            <div>· 21:00 — Último aviso</div>
+            <div>· 17:00 — Hábito pendiente</div>
+            <div>· Al llegar al goal — Celebración</div>
           </div>
+        )}
+      </div>
+
+      {/* Daily Goal */}
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Meta Diaria</h3>
+        <div className="flex items-center justify-between py-2">
+          <span className="text-sm">Meta automática (75%)</span>
+          <button
+            onClick={() => onUpdateSettings({ ...settings, autoGoal: !settings.autoGoal })}
+            className="w-12 h-6 rounded-full transition-all"
+            style={{ background: settings.autoGoal ? "#00b894" : "#2d3436" }}
+          >
+            <div
+              className="w-5 h-5 rounded-full bg-white transition-transform"
+              style={{ transform: settings.autoGoal ? "translateX(26px)" : "translateX(2px)" }}
+            />
+          </button>
         </div>
-        <div className="py-3 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-1">
-            <div className="font-medium text-gray-800">🎯 Meta diaria</div>
-            <button onClick={() => onUpdateSettings({ ...settings, autoGoal: !settings.autoGoal })} className={"text-xs font-bold px-2 py-1 rounded-lg " + (settings.autoGoal ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{settings.autoGoal ? "AUTO" : "MANUAL"}</button>
+        {!settings.autoGoal && (
+          <div className="mt-2">
+            <input
+              type="number"
+              value={settings.dailyGoal}
+              onChange={(e) => onUpdateSettings({ ...settings, dailyGoal: Math.max(1, parseInt(e.target.value) || 1) })}
+              className="w-full px-3 py-2 rounded-lg text-sm text-black"
+            />
           </div>
-          <div className="text-xs text-gray-400 mb-2">{settings.autoGoal ? "Auto: " + autoGoal + " XP (75% del maximo)" : "Manual"}</div>
-          {!settings.autoGoal && (
-            <div className="flex gap-2">
-              {[50, 75, 100, 150, 200].map((xp) => (
-                <button key={xp} onClick={() => onUpdateSettings({ ...settings, dailyXpGoal: xp })} className={"px-3 py-1.5 rounded-lg text-sm font-bold transition " + (settings.dailyXpGoal === xp ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{xp}</button>
-              ))}
-            </div>
-          )}
-          {settings.autoGoal && (
-            <div className="bg-gray-50 rounded-xl p-3 mt-1">
-              <div className="text-xs text-gray-500">Max posible: {maxPossible} XP/dia</div>
-              <div className="text-xs text-[#58CC02] font-bold">Meta auto: {autoGoal} XP/dia</div>
-            </div>
-          )}
+        )}
+        <div className="text-xs mt-2" style={{ color: "#b2bec3" }}>
+          Auto: {autoGoal} XP · Máximo posible: {maxXp} XP
         </div>
-        <div className="py-3 border-b border-gray-100">
-          <div className="font-medium text-gray-800 mb-1">💾 Datos</div>
-          <div className="flex gap-2 mt-1">
-            <button onClick={onExport} className="flex-1 bg-blue-50 text-blue-600 font-bold py-2 rounded-xl text-sm hover:bg-blue-100 transition">📤 Exportar</button>
-            <button onClick={onImport} className="flex-1 bg-purple-50 text-purple-600 font-bold py-2 rounded-xl text-sm hover:bg-purple-100 transition">📥 Importar</button>
-          </div>
-        </div>
-        <div className="py-3">
-          <button onClick={onReset} className="w-full bg-red-50 text-red-600 font-bold py-2 rounded-xl text-sm hover:bg-red-100 transition">🗑 Reiniciar</button>
+      </div>
+
+      {/* Data */}
+      <div className="rounded-xl p-4 mb-4" style={{ background: "#1e2a4a" }}>
+        <h3 className="text-sm font-bold mb-3">Datos</h3>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={onExport}
+            className="w-full py-2 rounded-lg text-sm font-bold"
+            style={{ background: "#2d3436", color: "#dfe6e9" }}
+          >
+            📤 Exportar datos
+          </button>
+          <button
+            onClick={onImport}
+            className="w-full py-2 rounded-lg text-sm font-bold"
+            style={{ background: "#2d3436", color: "#dfe6e9" }}
+          >
+            📥 Importar datos
+          </button>
+          <button
+            onClick={() => {
+              if (confirm("¿Resetear todos los datos? Esta acción no se puede deshacer.")) onReset();
+            }}
+            className="w-full py-2 rounded-lg text-sm font-bold"
+            style={{ background: "#3a1a1a", color: "#e17055" }}
+          >
+            🗑 Resetear todo
+          </button>
         </div>
       </div>
     </div>
   );
 }
-""")
+''')
 
-# ============================================================
-# ADD HABIT MODAL
-# ============================================================
-write("src/app/components/AddHabitModal.tsx", r"""
-"use client";
-import { useState } from "react";
+    # ========================
+    # src/app/components/AddHabitModal.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "AddHabitModal.tsx"), '''import { useState } from "react";
 import { Habit } from "../types";
-import { getLocalDate } from "../utils";
 
-interface AddHabitModalProps {
-  onAdd: (habit: Habit) => void;
+interface Props {
   onClose: () => void;
+  onAdd: (habit: Habit) => void;
 }
 
-export default function AddHabitModal({ onAdd, onClose }: AddHabitModalProps) {
+export default function AddHabitModal({ onClose, onAdd }: Props) {
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("✨");
-  const [freq, setFreq] = useState<"daily" | "weekly">("daily");
-  const [weeklyGoal, setWeeklyGoal] = useState(3);
-  const [xp, setXp] = useState(20);
-  const [type, setType] = useState<"build" | "avoid">("build");
+  const [habitType, setHabitType] = useState<"build" | "avoid">("build");
   const [progressive, setProgressive] = useState(false);
+  const [xpReward, setXpReward] = useState(20);
   const [unit, setUnit] = useState("min");
   const [minAmount, setMinAmount] = useState(5);
-
-  const buildEmojis = ["🏃", "📖", "🧘", "💧", "🎵", "✍️", "🥗", "💤", "💊", "🧹", "🎯", "💪", "🎨", "🌿", "📱", "✨"];
-  const avoidEmojis = ["🍔", "📱", "🛋️", "🚬", "🍺", "🍿", "🎮", "😴", "💸", "🤬"];
-  const emojis = type === "avoid" ? avoidEmojis : buildEmojis;
+  const [barrierBonus, setBarrierBonus] = useState(10);
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    onAdd({
-      id: Date.now().toString(),
+    const habit: Habit = {
+      id: "h" + Date.now(),
       name: name.trim(),
       emoji,
-      frequency: freq,
-      weeklyGoal: freq === "weekly" ? weeklyGoal : undefined,
-      xpReward: xp,
-      habitType: type,
+      habitType,
+      xpReward,
       progressive,
       unit: progressive ? unit : undefined,
       minAmount: progressive ? minAmount : undefined,
+      barrierBonus: progressive ? barrierBonus : undefined,
       amounts: {},
-      createdAt: getLocalDate(),
       completions: [],
       skips: [],
-      archived: false,
-    });
+    };
+    onAdd(habit);
   };
 
+  const emojiOptions = ["🏃", "📖", "🧘", "💪", "🎸", "✍️", "🥗", "💧", "🛡️", "📱", "🍔", "🚬", "😴", "✨", "🎯", "⭐"];
+
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={onClose}>
-      <div className="bg-white rounded-t-3xl p-6 w-full max-w-md space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-black text-xl text-gray-800">Nuevo habito</h3>
-        <div>
-          <label className="text-sm font-medium text-gray-600">Tipo</label>
-          <div className="flex gap-2 mt-1">
-            <button onClick={() => { setType("build"); setXp(20); setEmoji("✨"); }} className={"flex-1 py-3 rounded-xl font-bold text-sm transition " + (type === "build" ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>🟢 Construir (+XP)</button>
-            <button onClick={() => { setType("avoid"); setXp(20); setEmoji("🍔"); }} className={"flex-1 py-3 rounded-xl font-bold text-sm transition " + (type === "avoid" ? "bg-red-500 text-white" : "bg-gray-100 text-gray-500")}>🔴 Evitar (-XP)</button>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.7)" }}>
+      <div className="w-full max-w-md rounded-t-2xl p-5 max-h-[85vh] overflow-y-auto" style={{ background: "#1a1a2e" }}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold">Nuevo Hábito</h2>
+          <button onClick={onClose} className="text-2xl" style={{ color: "#b2bec3" }}>×</button>
         </div>
-        <div>
-          <label className="text-sm font-medium text-gray-600">Emoji</label>
-          <div className="flex gap-2 mt-1 flex-wrap">
-            {emojis.map((e) => (
-              <button key={e} onClick={() => setEmoji(e)} className={"text-2xl p-1.5 rounded-lg transition " + (emoji === e ? (type === "avoid" ? "bg-red-100 ring-2 ring-red-400" : "bg-[#58CC02]/20 ring-2 ring-[#58CC02]") : "hover:bg-gray-100")}>{e}</button>
+
+        {/* Name */}
+        <div className="mb-4">
+          <label className="text-xs font-bold block mb-1" style={{ color: "#b2bec3" }}>Nombre</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg text-sm text-black"
+            placeholder="Ej: Leer 20 minutos"
+          />
+        </div>
+
+        {/* Emoji */}
+        <div className="mb-4">
+          <label className="text-xs font-bold block mb-1" style={{ color: "#b2bec3" }}>Emoji</label>
+          <div className="flex flex-wrap gap-2">
+            {emojiOptions.map((e) => (
+              <button
+                key={e}
+                onClick={() => setEmoji(e)}
+                className="w-10 h-10 rounded-lg text-xl flex items-center justify-center"
+                style={{ background: emoji === e ? "#6c5ce7" : "#2d3436" }}
+              >
+                {e}
+              </button>
             ))}
           </div>
         </div>
-        <div>
-          <label className="text-sm font-medium text-gray-600">Nombre</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "avoid" ? "Ej: Comer chatarra" : "Ej: Correr 30 min"} className="w-full mt-1 bg-gray-50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#58CC02]" />
-        </div>
-        <div>
-          <label className="text-sm font-medium text-gray-600">Frecuencia</label>
-          <div className="flex gap-2 mt-1">
-            <button onClick={() => setFreq("daily")} className={"flex-1 py-2.5 rounded-xl font-bold text-sm transition " + (freq === "daily" ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>📅 Diario</button>
-            <button onClick={() => setFreq("weekly")} className={"flex-1 py-2.5 rounded-xl font-bold text-sm transition " + (freq === "weekly" ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>📆 Semanal</button>
-          </div>
-        </div>
-        {freq === "weekly" && (
-          <div>
-            <label className="text-sm font-medium text-gray-600">Veces por semana</label>
-            <div className="flex gap-2 mt-1">
-              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                <button key={n} onClick={() => setWeeklyGoal(n)} className={"w-10 h-10 rounded-xl font-bold text-sm transition " + (weeklyGoal === n ? "bg-[#58CC02] text-white" : "bg-gray-100 text-gray-500")}>{n}</button>
-              ))}
-            </div>
-          </div>
-        )}
-        <div>
-          <label className="text-sm font-medium text-gray-600">{type === "avoid" ? "Penalidad XP" : "Recompensa XP"}</label>
-          <div className="flex gap-2 mt-1">
-            {(type === "avoid" ? [10, 20, 25, 30, 50] : [10, 15, 20, 30, 50]).map((x) => (
-              <button key={x} onClick={() => setXp(x)} className={"px-4 py-2 rounded-xl font-bold text-sm transition " + (xp === x ? (type === "avoid" ? "bg-red-500 text-white" : "bg-[#58CC02] text-white") : "bg-gray-100 text-gray-500")}>{type === "avoid" ? "-" : "+"}{x}</button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-gray-600">📊 Progresivo (rastrear cantidad)</label>
-            <button onClick={() => setProgressive(!progressive)} className={"w-12 h-7 rounded-full transition-all relative " + (progressive ? "bg-[#58CC02]" : "bg-gray-300")}>
-              <div className={"w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow " + (progressive ? "left-6" : "left-1")} />
+
+        {/* Type */}
+        <div className="mb-4">
+          <label className="text-xs font-bold block mb-1" style={{ color: "#b2bec3" }}>Tipo</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setHabitType("build")}
+              className="flex-1 py-2 rounded-lg text-sm font-bold"
+              style={{ background: habitType === "build" ? "#00b894" : "#2d3436", color: "white" }}
+            >
+              🏗 Construir
+            </button>
+            <button
+              onClick={() => { setHabitType("avoid"); setProgressive(false); }}
+              className="flex-1 py-2 rounded-lg text-sm font-bold"
+              style={{ background: habitType === "avoid" ? "#e17055" : "#2d3436", color: "white" }}
+            >
+              🛡 Evitar
             </button>
           </div>
+        </div>
+
+        {/* Progressive */}
+        {habitType === "build" && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold" style={{ color: "#b2bec3" }}>Progresivo (cantidad variable)</label>
+              <button
+                onClick={() => setProgressive(!progressive)}
+                className="w-12 h-6 rounded-full transition-all"
+                style={{ background: progressive ? "#00b894" : "#2d3436" }}
+              >
+                <div
+                  className="w-5 h-5 rounded-full bg-white transition-transform"
+                  style={{ transform: progressive ? "translateX(26px)" : "translateX(2px)" }}
+                />
+              </button>
+            </div>
+            {progressive && (
+              <div className="mt-3 p-3 rounded-lg" style={{ background: "#2d3436" }}>
+                <div className="mb-3">
+                  <label className="text-xs block mb-1" style={{ color: "#b2bec3" }}>Unidad</label>
+                  <input
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    className="w-full px-2 py-1 rounded text-sm text-black"
+                    placeholder="min, km, páginas..."
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="text-xs block mb-1" style={{ color: "#b2bec3" }}>Cantidad mínima (barrera)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={minAmount}
+                    onChange={(e) => setMinAmount(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-2 py-1 rounded text-sm text-black"
+                  />
+                  <div className="text-[10px] mt-1" style={{ color: "#fdcb6e" }}>
+                    ⚡ La barrera es lo más difícil: arrancar. Por eso se premia más.
+                  </div>
+                </div>
+                <div className="mb-3">
+                  <label className="text-xs block mb-1" style={{ color: "#b2bec3" }}>Bonus barrera (XP al romperla)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={barrierBonus}
+                    onChange={(e) => setBarrierBonus(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-2 py-1 rounded text-sm text-black"
+                  />
+                  <div className="text-[10px] mt-1" style={{ color: "#b2bec3" }}>
+                    Al llegar a {minAmount} {unit} → +{barrierBonus} XP. Luego +1 XP/{unit} extra.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* XP Reward */}
+        <div className="mb-4">
+          <label className="text-xs font-bold block mb-1" style={{ color: "#b2bec3" }}>
+            XP máximo {habitType === "avoid" ? "(perder si caés)" : progressive ? "(tope por día)" : "(al completar)"}
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={xpReward}
+            onChange={(e) => setXpReward(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-full px-3 py-2 rounded-lg text-sm text-black"
+          />
           {progressive && (
-            <div className="mt-2 space-y-2 p-3 bg-gray-50 rounded-xl">
-              <div>
-                <label className="text-xs font-medium text-gray-500">Unidad (min, km, paginas, rep...)</label>
-                <input value={unit} onChange={(e) => setUnit(e.target.value)} className="w-full mt-1 bg-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#58CC02]" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500">Minimo para contar (ej: 5 min)</label>
-                <input type="number" value={minAmount} onChange={(e) => setMinAmount(parseInt(e.target.value) || 0)} min={0} className="w-full mt-1 bg-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#58CC02]" />
-              </div>
-              <p className="text-[10px] text-gray-400">
-                {type === "build" ? "Ej: Leer 1 min = 1 XP. Minimo " + minAmount + " " + unit + " para contar. Maximo: " + xp + " XP." : "Ej: 1 " + unit + " = -1 XP. Si no lo hiciste: +" + xp + " XP."}
-              </p>
+            <div className="text-[10px] mt-1" style={{ color: "#b2bec3" }}>
+              Ejemplo: {minAmount} {unit} = {barrierBonus} XP (barrera), luego +1 XP/{unit}. Máximo {xpReward} XP/día.
             </div>
           )}
         </div>
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition">Cancelar</button>
-          <button onClick={handleSubmit} className={"flex-1 py-3 rounded-xl font-bold text-white transition " + (type === "avoid" ? "bg-red-500 hover:bg-red-600" : "bg-[#58CC02] hover:bg-[#4fb002]")}>
-            {type === "avoid" ? "Crear habito a evitar" : "Crear habito"}
-          </button>
-        </div>
+
+        <button
+          onClick={handleSubmit}
+          disabled={!name.trim()}
+          className="w-full py-3 rounded-xl font-bold text-sm"
+          style={{
+            background: name.trim() ? "#6c5ce7" : "#2d3436",
+            color: name.trim() ? "white" : "#b2bec3",
+          }}
+        >
+          Crear Hábito
+        </button>
       </div>
     </div>
   );
 }
-""")
+''')
 
-# ============================================================
-# MAIN PAGE
-# ============================================================
-write("src/app/page.tsx", r"""
-"use client";
-import { useState, useEffect, useCallback } from "react";
-import { Habit, JournalEntry, AppSettings } from "./types";
-import { MOOD_EMOJIS } from "./types";
+    # ========================
+    # src/app/components/AchievementToast.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "components", "AchievementToast.tsx"), '''import { useEffect, useState } from "react";
+import { Achievement } from "../types";
+
+interface Props {
+  achievement: Achievement | null;
+  onDismiss: () => void;
+}
+
+export default function AchievementToast({ achievement, onDismiss }: Props) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (achievement) {
+      setVisible(true);
+      const timer = setTimeout(() => {
+        setVisible(false);
+        setTimeout(onDismiss, 300);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [achievement, onDismiss]);
+
+  if (!achievement) return null;
+
+  return (
+    <div
+      className="fixed top-4 left-4 right-4 z-50 transition-all duration-300"
+      style={{
+        transform: visible ? "translateY(0)" : "translateY(-100px)",
+        opacity: visible ? 1 : 0,
+      }}
+    >
+      <div
+        className="rounded-xl p-4 flex items-center gap-3"
+        style={{
+          background: "linear-gradient(135deg, #6c5ce7, #a29bfe)",
+          boxShadow: "0 4px 20px rgba(108,92,231,0.5)",
+        }}
+      >
+        <span className="text-4xl achievement-pop">{achievement.emoji}</span>
+        <div className="flex-1">
+          <div className="text-xs font-bold" style={{ color: "#fdcb6e" }}>¡LOGRO DESBLOQUEADO!</div>
+          <div className="text-sm font-bold text-white">{achievement.name}</div>
+          <div className="text-xs" style={{ color: "rgba(255,255,255,0.8)" }}>{achievement.description}</div>
+        </div>
+        <button onClick={() => { setVisible(false); setTimeout(onDismiss, 300); }} className="text-white text-lg">×</button>
+      </div>
+    </div>
+  );
+}
+''')
+
+    # ========================
+    # src/app/layout.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "layout.tsx"), '''import type { Metadata, Viewport } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "HabitDuo",
+  description: "Duolingo-style habit tracker PWA",
+  manifest: "/habit-duo/manifest.json",
+  icons: {
+    icon: "/habit-duo/icon-192.png",
+    apple: "/habit-duo/icon-192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#6c5ce7",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="es">
+      <head>
+        <link rel="apple-touch-icon" href="/habit-duo/icon-192.png" />
+      </head>
+      <body>{children}</body>
+    </html>
+  );
+}
+''')
+
+    # ========================
+    # src/app/page.tsx
+    # ========================
+    write(os.path.join(base, "src", "app", "page.tsx"), '''"use client";
+
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Habit, JournalEntry, AppSettings, Achievement, ACHIEVEMENT_DEFS } from "./types";
 import {
-  getLocalDate, getDayXp, getHabitXp, calcAutoGoal, getMaxPossibleXp,
-  getOverallStreak, getXpLevel, DEFAULT_HABITS, DEFAULT_SETTINGS
+  getLocalDate, calcAutoGoal, getOverallStreak, getDayXp,
+  getMaxPossibleXp, getTotalXp, checkAchievements, getNewlyUnlocked,
+  getHabitXp, DEFAULT_HABITS, DEFAULT_SETTINGS,
 } from "./utils";
 import XPHeader from "./components/XPHeader";
 import HabitCard from "./components/HabitCard";
@@ -971,276 +1941,507 @@ import InsightsScreen from "./components/InsightsScreen";
 import JournalScreen from "./components/JournalScreen";
 import SettingsScreen from "./components/SettingsScreen";
 import AddHabitModal from "./components/AddHabitModal";
+import AchievementToast from "./components/AchievementToast";
 
-export default function HabitDuo() {
+type Screen = "habits" | "insights" | "journal" | "settings";
+
+export default function Home() {
   const [habits, setHabits] = useState<Habit[]>([]);
-  const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [screen, setScreen] = useState<"home" | "insights" | "journal" | "settings">("home");
-  const [showAddHabit, setShowAddHabit] = useState(false);
-  const [todayMood, setTodayMood] = useState(0);
-  const [todayNote, setTodayNote] = useState("");
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [prevXp, setPrevXp] = useState(0);
+  const [journalEntries, setJournalEntries] = useState<Record<string, JournalEntry>>({});
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [screen, setScreen] = useState<Screen>("habits");
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newAchievement, setNewAchievement] = useState<Achievement | null>(null);
+  const [celebrating, setCelebrating] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const prevGoalReached = useRef(false);
 
-  // Load
-  useEffect(() => {
-    const sh = localStorage.getItem("habitduo-habits");
-    if (sh) {
-      const parsed = JSON.parse(sh);
-      const migrated = parsed.map((h: any) => ({
-        ...h,
-        xpReward: h.xpReward || (h.frequency === "weekly" ? 30 : 20),
-        habitType: h.habitType || "build",
-        progressive: h.progressive || false,
-        unit: h.unit || "min",
-        minAmount: h.minAmount || 5,
-        amounts: h.amounts || {},
-      }));
-      setHabits(migrated);
-    } else setHabits(DEFAULT_HABITS);
-    const sj = localStorage.getItem("habitduo-journal");
-    if (sj) setJournal(JSON.parse(sj));
-    const ss = localStorage.getItem("habitduo-settings");
-    if (ss) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(ss) });
-    const sm = localStorage.getItem("habitduo-todaymood");
-    if (sm) setTodayMood(parseInt(sm));
-    const sn = localStorage.getItem("habitduo-todaynote");
-    if (sn) setTodayNote(sn);
-  }, []);
-
-  // Save
-  useEffect(() => { if (habits.length > 0) localStorage.setItem("habitduo-habits", JSON.stringify(habits)); }, [habits]);
-  useEffect(() => { localStorage.setItem("habitduo-journal", JSON.stringify(journal)); }, [journal]);
-  useEffect(() => { localStorage.setItem("habitduo-settings", JSON.stringify(settings)); }, [settings]);
-  useEffect(() => { localStorage.setItem("habitduo-todaymood", todayMood.toString()); }, [todayMood]);
-  useEffect(() => { localStorage.setItem("habitduo-todaynote", todayNote); }, [todayNote]);
-
-  // Computed
   const today = getLocalDate();
-  const activeHabits = habits.filter((h) => !h.archived);
-  const autoGoal = calcAutoGoal(habits);
-  const effectiveGoal = settings.autoGoal ? autoGoal : settings.dailyXpGoal;
-  const todayXp = getDayXp(habits, journal, today);
-  const overallStreak = getOverallStreak(habits, journal, effectiveGoal);
 
-  // Celebration
+  // ===== LOAD FROM LOCALSTORAGE =====
   useEffect(() => {
-    if (todayXp >= effectiveGoal && prevXp < effectiveGoal) {
-      setShowCelebration(true);
-      setTimeout(() => setShowCelebration(false), 3000);
-    }
-    setPrevXp(todayXp);
-  }, [todayXp, effectiveGoal]);
+    try {
+      const h = localStorage.getItem("habitduo_habits");
+      const s = localStorage.getItem("habitduo_settings");
+      const j = localStorage.getItem("habitduo_journal");
+      const a = localStorage.getItem("habitduo_achievements");
 
-  // Notifications
-  const scheduleNudge = useCallback(() => {
-    if (!settings.notificationsEnabled) return;
-    const interval = settings.nudgeIntervalHours * 60 * 60 * 1000;
-    const existingTimer = (window as any).__nudgeTimer;
-    if (existingTimer) clearInterval(existingTimer);
-    const timer = setInterval(() => {
-      const txp = getDayXp(habits, journal, getLocalDate());
-      if (txp < effectiveGoal) {
-        const remaining = effectiveGoal - txp;
-        const body = "Te faltan " + remaining + " XP para tu dia de racha!";
-        if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({ type: "SHOW_NOTIFICATION", title: "HabitDuo", body });
-        } else if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("HabitDuo", { body, icon: "/habit-duo/icons/icon-192.png" });
-        }
+      if (h) {
+        const parsed = JSON.parse(h) as Habit[];
+        // Migration: fill missing fields
+        const migrated = parsed.map((habit) => ({
+          ...habit,
+          habitType: habit.habitType || "build",
+          progressive: habit.progressive ?? false,
+          completions: [...new Set(habit.completions || [])],
+          skips: habit.skips || [],
+          amounts: habit.amounts || {},
+          archived: habit.archived ?? false,
+          barrierBonus: habit.barrierBonus ?? (habit.minAmount ? habit.minAmount * 2 : undefined),
+        }));
+        setHabits(migrated);
+      } else {
+        setHabits(DEFAULT_HABITS);
       }
-    }, interval);
-    (window as any).__nudgeTimer = timer;
-  }, [settings.notificationsEnabled, settings.nudgeIntervalHours, habits, journal, effectiveGoal]);
 
-  useEffect(() => { scheduleNudge(); return () => { const t = (window as any).__nudgeTimer; if (t) clearInterval(t); }; }, [scheduleNudge]);
-
-  useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data?.type === "SHOW_NOTIFICATION") {
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification(event.data.title, { body: event.data.body, icon: "/habit-duo/icons/icon-192.png", badge: "/habit-duo/icons/icon-192.png", vibrate: [100, 50, 100] });
-          });
-        }
-      });
+      if (s) {
+        const parsed = JSON.parse(s) as AppSettings;
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed, smartNotifications: parsed.smartNotifications ?? true });
+      }
+      if (j) setJournalEntries(JSON.parse(j));
+      if (a) setAchievements(JSON.parse(a));
+    } catch (e) {
+      console.error("Error loading data:", e);
+      setHabits(DEFAULT_HABITS);
     }
+    setLoaded(true);
   }, []);
 
-  // Habit actions
-  const toggleComplete = (id: string) => {
-    setHabits((prev) => prev.map((h) => {
-      if (h.id !== id) return h;
-      if (h.completions.includes(today)) return { ...h, completions: [...new Set(h.completions.filter((c) => c !== today))] };
-      return { ...h, completions: [...new Set([...h.completions, today])] };
-    }));
-  };
+  // ===== SAVE TO LOCALSTORAGE =====
+  useEffect(() => {
+    if (!loaded) return;
+    localStorage.setItem("habitduo_habits", JSON.stringify(habits));
+  }, [habits, loaded]);
 
-  const skipHabit = (id: string) => {
-    setHabits((prev) => prev.map((h) => h.id !== id ? h : { ...h, skips: [...new Set([...h.skips, today])] }));
-  };
+  useEffect(() => {
+    if (!loaded) return;
+    localStorage.setItem("habitduo_settings", JSON.stringify(settings));
+  }, [settings, loaded]);
 
-  const updateAmount = (id: string, date: string, amount: number) => {
-    setHabits((prev) => prev.map((h) => {
-      if (h.id !== id) return h;
-      const newAmounts = { ...h.amounts, [date]: amount };
-      const newCompletions = [...h.completions];
-      // For build progressive: auto-mark complete if amount >= minAmount
-      if (h.habitType === "build" && h.progressive) {
-        if (amount >= (h.minAmount || 5) && !newCompletions.includes(date)) {
-          newCompletions.push(date);
-        } else if (amount < (h.minAmount || 5)) {
-          const idx = newCompletions.indexOf(date);
-          if (idx >= 0) newCompletions.splice(idx, 1);
-        }
+  useEffect(() => {
+    if (!loaded) return;
+    localStorage.setItem("habitduo_journal", JSON.stringify(journalEntries));
+  }, [journalEntries, loaded]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    localStorage.setItem("habitduo_achievements", JSON.stringify(achievements));
+  }, [achievements, loaded]);
+
+  // ===== COMPUTED VALUES =====
+  const effectiveGoal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+  const streak = getOverallStreak(habits, settings);
+  const todayXp = getDayXp(habits, today, journalEntries[today] || undefined);
+  const maxPossibleXp = getMaxPossibleXp(habits);
+
+  // ===== ACHIEVEMENT CHECKING =====
+  useEffect(() => {
+    if (!loaded) return;
+    const prevAchievements = [...achievements];
+    const newAchievements = checkAchievements(habits, settings, journalEntries, prevAchievements);
+    const newlyUnlocked = getNewlyUnlocked(prevAchievements, newAchievements);
+    
+    if (newlyUnlocked) {
+      setAchievements(newAchievements);
+      setNewAchievement(newlyUnlocked);
+      // Trigger confetti
+      try {
+        const confetti = require("canvas-confetti");
+        confetti.default({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+      } catch {}
+    } else if (newAchievements.length !== prevAchievements.length) {
+      setAchievements(newAchievements);
+    }
+  }, [habits, journalEntries, loaded]);
+
+  // ===== CELEBRATION ON GOAL REACHED =====
+  useEffect(() => {
+    if (!loaded) return;
+    const goalReached = todayXp >= effectiveGoal;
+    if (goalReached && !prevGoalReached.current) {
+      setCelebrating(true);
+      try {
+        const confetti = require("canvas-confetti");
+        confetti.default({ particleCount: 150, spread: 90, origin: { y: 0.6 } });
+      } catch {}
+      setTimeout(() => setCelebrating(false), 2000);
+      
+      // Smart notification: celebration
+      if (settings.notifications && "Notification" in window && Notification.permission === "granted") {
+        new Notification("⚡ Día épico desbloqueado", {
+          body: `¡Llegaste a ${todayXp} XP! Meta: ${effectiveGoal} XP`,
+          icon: "/habit-duo/icon-192.png",
+          tag: "celebration",
+        });
       }
-      // For avoid progressive: auto-mark if amount > 0
-      if (h.habitType === "avoid" && h.progressive) {
-        if (amount > 0 && !newCompletions.includes(date)) {
-          newCompletions.push(date);
-        } else if (amount === 0) {
-          const idx = newCompletions.indexOf(date);
-          if (idx >= 0) newCompletions.splice(idx, 1);
-        }
-      }
-      return { ...h, amounts: newAmounts, completions: [...new Set(newCompletions)] };
-    }));
-  };
+    }
+    prevGoalReached.current = goalReached;
+  }, [todayXp, effectiveGoal, loaded, settings.notifications]);
 
-  const addHabit = (habit: Habit) => {
+  // ===== SMART NOTIFICATIONS =====
+  useEffect(() => {
+    if (!loaded || !settings.notifications || !settings.smartNotifications) return;
+    
+    // Request notification permission
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+
+    // Register service worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready.then((reg) => {
+        // Get incomplete habits for today
+        const incompleteHabits = habits
+          .filter(h => !h.archived)
+          .filter(h => {
+            if (h.habitType === "avoid") return h.completions?.includes(today); // did the bad thing
+            if (h.progressive) return (h.amounts?.[today] ?? 0) < (h.minAmount ?? 1);
+            return !h.completions?.includes(today);
+          })
+          .map(h => ({
+            name: h.name,
+            progressive: h.progressive,
+            minAmount: h.minAmount,
+            unit: h.unit,
+            barrierBonus: h.barrierBonus,
+            xpReward: h.xpReward,
+          }));
+
+        // Send data to service worker for scheduling
+        reg.active?.postMessage({
+          type: "SCHEDULE_NOTIFICATIONS",
+          payload: {
+            todayXp,
+            effectiveGoal,
+            incompleteHabits,
+            streak,
+          },
+        });
+      }).catch(console.error);
+    }
+  }, [todayXp, effectiveGoal, habits, streak, loaded, settings.notifications, settings.smartNotifications]);
+
+  // ===== HABIT ACTIONS =====
+  const toggleComplete = useCallback((id: string) => {
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== id) return h;
+        if (h.habitType === "avoid") {
+          const isCompleted = h.completions?.includes(today) ?? false;
+          if (isCompleted) {
+            return { ...h, completions: h.completions?.filter((d) => d !== today) };
+          }
+          return { ...h, completions: [...new Set([...(h.completions || []), today])] };
+        }
+        // Build habit - simple
+        if (!h.progressive) {
+          const isCompleted = h.completions?.includes(today) ?? false;
+          if (isCompleted) {
+            return { ...h, completions: h.completions?.filter((d) => d !== today) };
+          }
+          return { ...h, completions: [...new Set([...(h.completions || []), today])] };
+        }
+        return h;
+      })
+    );
+  }, [today]);
+
+  const skipHabit = useCallback((id: string) => {
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== id) return h;
+        const isSkipped = h.skips?.includes(today) ?? false;
+        if (isSkipped) {
+          return { ...h, skips: h.skips?.filter((d) => d !== today) };
+        }
+        return { ...h, skips: [...new Set([...(h.skips || []), today])] };
+      })
+    );
+  }, [today]);
+
+  const updateAmount = useCallback((id: string, amount: number) => {
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== id) return h;
+        return {
+          ...h,
+          amounts: { ...(h.amounts || {}), [today]: amount },
+        };
+      })
+    );
+  }, [today]);
+
+  const addHabit = useCallback((habit: Habit) => {
     setHabits((prev) => [...prev, habit]);
-    setShowAddHabit(false);
-  };
+    setShowAddModal(false);
+  }, []);
 
-  const deleteHabit = (id: string) => setHabits((prev) => prev.filter((h) => h.id !== id));
-  const archiveHabit = (id: string) => setHabits((prev) => prev.map((h) => h.id === id ? { ...h, archived: !h.archived } : h));
+  const deleteHabit = useCallback((id: string) => {
+    setHabits((prev) => prev.filter((h) => h.id !== id));
+  }, []);
 
-  const exportData = () => {
-    const blob = new Blob([JSON.stringify({ habits, journal, settings, exportDate: new Date().toISOString() }, null, 2)], { type: "application/json" });
+  const archiveHabit = useCallback((id: string) => {
+    setHabits((prev) =>
+      prev.map((h) => (h.id === id ? { ...h, archived: true } : h))
+    );
+  }, []);
+
+  const saveJournal = useCallback((entry: JournalEntry) => {
+    setJournalEntries((prev) => ({ ...prev, [today]: entry }));
+  }, [today]);
+
+  const handleExport = useCallback(() => {
+    const data = {
+      habits,
+      settings,
+      journalEntries,
+      achievements,
+      exportedAt: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "habitduo-backup-" + today + ".json"; a.click();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `habitduo-backup-${today}.json`;
+    a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [habits, settings, journalEntries, achievements, today]);
 
-  const importData = () => {
-    const input = document.createElement("input"); input.type = "file"; input.accept = ".json";
-    input.onchange = (e: any) => {
-      const file = e.target.files?.[0]; if (!file) return;
+  const handleImport = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
           const data = JSON.parse(ev.target?.result as string);
           if (data.habits) setHabits(data.habits);
-          if (data.journal) setJournal(data.journal);
-          if (data.settings) setSettings({ ...DEFAULT_SETTINGS, ...data.settings });
-          alert("Datos importados correctamente");
-        } catch { alert("Error al importar datos"); }
+          if (data.settings) setSettings(data.settings);
+          if (data.journalEntries) setJournalEntries(data.journalEntries);
+          if (data.achievements) setAchievements(data.achievements);
+        } catch {
+          alert("Error al importar datos");
+        }
       };
       reader.readAsText(file);
     };
     input.click();
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setHabits(DEFAULT_HABITS);
+    setSettings(DEFAULT_SETTINGS);
+    setJournalEntries({});
+    setAchievements([]);
+    localStorage.removeItem("habitduo_habits");
+    localStorage.removeItem("habitduo_settings");
+    localStorage.removeItem("habitduo_journal");
+    localStorage.removeItem("habitduo_achievements");
+  }, []);
+
+  // ===== SCREENS =====
+  const screens: Record<Screen, string> = {
+    habits: "🏠",
+    insights: "📊",
+    journal: "📝",
+    settings: "⚙️",
   };
 
-  const saveJournalEntry = () => {
-    if (todayMood === 0) return;
-    setJournal((prev) => [...prev.filter((e) => e.date !== today), { date: today, mood: todayMood, note: todayNote }]);
-  };
-
-  // XP breakdown
-  const xpBreakdown = activeHabits.map((h) => {
-    const xp = getHabitXp(h, today);
-    const amount = h.amounts?.[today] || 0;
-    const isAvoid = h.habitType === "avoid";
-    if (isAvoid && h.progressive && amount === 0) return { id: h.id, label: h.emoji + " " + h.name + " evitado", xp, isAvoid: false };
-    if (isAvoid && h.progressive && amount > 0) return { id: h.id, label: h.emoji + " " + h.name, xp, isAvoid: true };
-    if (isAvoid && !h.progressive && h.completions.includes(today)) return { id: h.id, label: h.emoji + " " + h.name, xp, isAvoid: true };
-    if (isAvoid && !h.progressive && !h.completions.includes(today)) return { id: h.id, label: h.emoji + " " + h.name + " evitado", xp, isAvoid: false };
-    if (!isAvoid && xp > 0) return { id: h.id, label: h.emoji + " " + h.name + (h.progressive ? " " + amount + " " + (h.unit || "min") : ""), xp, isAvoid: false };
-    return null;
-  }).filter(Boolean);
-
-  const buildHabits = activeHabits.filter((h) => h.habitType === "build");
-  const avoidHabits = activeHabits.filter((h) => h.habitType === "avoid");
+  if (!loaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#1a1a2e" }}>
+        <div className="text-2xl">⏳</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#58CC02] to-[#46a302] pb-20">
-      {showCelebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center animate-bounce">
-            <div className="text-6xl mb-3">🔥</div>
-            <div className="text-2xl font-black text-[#58CC02]">Dia de racha!</div>
-            <div className="text-sm text-gray-500 mt-1">{todayXp} XP</div>
-          </div>
-        </div>
-      )}
+    <div className={`max-w-md mx-auto min-h-screen ${celebrating ? "celebrate" : ""}`} style={{ background: "#1a1a2e" }}>
+      {/* Achievement Toast */}
+      <AchievementToast achievement={newAchievement} onDismiss={() => setNewAchievement(null)} />
 
-      <XPHeader todayXp={todayXp} effectiveGoal={effectiveGoal} overallStreak={overallStreak} autoGoal={settings.autoGoal} onSettings={() => setScreen("settings")} />
+      {/* Header */}
+      <XPHeader
+        habits={habits}
+        settings={settings}
+        journal={journalEntries[today] || null}
+        effectiveGoal={effectiveGoal}
+        streak={streak}
+        journalEntries={journalEntries}
+      />
 
-      <div className="max-w-md mx-auto px-4 -mt-4 space-y-4">
-        {/* Nav */}
-        <div className="flex bg-white rounded-2xl shadow-lg overflow-hidden">
-          {(["home", "insights", "journal"] as const).map((key) => (
-            <button key={key} onClick={() => setScreen(key)} className={"flex-1 py-3 text-sm font-bold transition " + (screen === key ? "bg-[#58CC02] text-white" : "text-gray-500 hover:bg-gray-50")}>
-              {key === "home" ? "🏠 Inicio" : key === "insights" ? "📊 Insights" : "📝 Diario"}
-            </button>
-          ))}
-        </div>
-
-        {screen === "home" && (
-          <div className="space-y-3">
-            {/* XP breakdown */}
-            <div className="bg-white rounded-2xl shadow-md p-4">
+      {/* Content */}
+      <div className="pb-20">
+        {screen === "habits" && (
+          <div className="px-4">
+            {/* Show archived toggle */}
+            {habits.some(h => h.archived) && (
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-gray-800 text-sm">XP de hoy</h3>
-                <span className={"font-black " + (todayXp >= effectiveGoal ? "text-[#58CC02]" : todayXp < 0 ? "text-red-500" : "text-gray-400")}>{todayXp}/{effectiveGoal}</span>
-              </div>
-              <div className="space-y-1">
-                {xpBreakdown.map((item: any) => (
-                  <div key={item.id} className="flex justify-between text-xs text-gray-500">
-                    <span>{item.label}</span>
-                    <span className={"font-bold " + (item.isAvoid || item.xp < 0 ? "text-red-500" : "text-[#58CC02]")}>{item.xp > 0 ? "+" : ""}{item.xp} XP</span>
-                  </div>
-                ))}
-                {journal.find((e) => e.date === today) && <div className="flex justify-between text-xs text-gray-500"><span>📝 Diario</span><span className="text-[#58CC02] font-bold">+15 XP</span></div>}
-                {todayXp === 0 && <p className="text-xs text-gray-400 text-center py-1">Completa habitos para ganar XP</p>}
-              </div>
-            </div>
-
-            {/* Build habits */}
-            {buildHabits.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🟢 Construir</h3>
-                {buildHabits.map((h) => (
-                  <HabitCard key={h.id} habit={h} onToggle={toggleComplete} onSkip={skipHabit} onUpdateAmount={updateAmount} onArchive={archiveHabit} onDelete={deleteHabit} />
-                ))}
+                <span className="text-xs" style={{ color: "#b2bec3" }}>
+                  {habits.filter(h => !h.archived).length} activos · {habits.filter(h => h.archived).length} archivados
+                </span>
               </div>
             )}
 
-            {/* Avoid habits */}
-            {avoidHabits.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">🔴 Evitar</h3>
-                {avoidHabits.map((h) => (
-                  <HabitCard key={h.id} habit={h} onToggle={toggleComplete} onSkip={skipHabit} onUpdateAmount={updateAmount} onArchive={archiveHabit} onDelete={deleteHabit} />
-                ))}
-              </div>
-            )}
+            {/* Active habits */}
+            {habits
+              .filter((h) => !h.archived)
+              .map((h) => (
+                <HabitCard
+                  key={h.id}
+                  habit={h}
+                  onToggle={toggleComplete}
+                  onSkip={skipHabit}
+                  onUpdateAmount={updateAmount}
+                  onDelete={deleteHabit}
+                  onArchive={archiveHabit}
+                />
+              ))}
 
-            <button onClick={() => setShowAddHabit(true)} className="w-full bg-white border-2 border-dashed border-[#58CC02] rounded-2xl p-4 text-[#58CC02] font-bold hover:bg-green-50 transition">+ Agregar habito</button>
+            {/* Add button */}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="w-full py-3 rounded-xl font-bold text-sm mb-4 transition-all"
+              style={{
+                background: "transparent",
+                color: "#6c5ce7",
+                border: "2px dashed #6c5ce7",
+              }}
+            >
+              + Agregar Hábito
+            </button>
           </div>
         )}
 
-        {screen === "insights" && <InsightsScreen habits={habits} journal={journal} settings={settings} effectiveGoal={effectiveGoal} />}
-        {screen === "journal" && <JournalScreen journal={journal} todayMood={todayMood} todayNote={todayNote} onSetMood={setTodayMood} onSetNote={setTodayNote} onSave={saveJournalEntry} />}
-        {screen === "settings" && <SettingsScreen settings={settings} habits={habits} onUpdateSettings={setSettings} onExport={exportData} onImport={importData} onReset={() => { if (confirm("Borrar todos los datos?")) { localStorage.clear(); window.location.reload(); } }} />}
+        {screen === "insights" && (
+          <InsightsScreen habits={habits} settings={settings} journalEntries={journalEntries} achievements={achievements} />
+        )}
+
+        {screen === "journal" && (
+          <JournalScreen entry={journalEntries[today] || null} onSave={saveJournal} />
+        )}
+
+        {screen === "settings" && (
+          <SettingsScreen
+            settings={settings}
+            habits={habits}
+            onUpdateSettings={setSettings}
+            onExport={handleExport}
+            onImport={handleImport}
+            onReset={handleReset}
+          />
+        )}
       </div>
 
-      {showAddHabit && <AddHabitModal onAdd={addHabit} onClose={() => setShowAddHabit(false)} />}
+      {/* Bottom Nav */}
+      <div
+        className="fixed bottom-0 left-0 right-0 flex justify-center"
+        style={{ background: "#16213e", borderTop: "1px solid rgba(255,255,255,0.05)" }}
+      >
+        <div className="max-w-md w-full flex">
+          {(Object.entries(screens) as [Screen, string][]).map(([key, emoji]) => (
+            <button
+              key={key}
+              onClick={() => setScreen(key)}
+              className="flex-1 py-3 text-center transition-all"
+              style={{ color: screen === key ? "#6c5ce7" : "#b2bec3" }}
+            >
+              <div className="text-xl">{emoji}</div>
+              <div className="text-[10px]">
+                {key === "habits" ? "Hoy" : key === "insights" ? "Insights" : key === "journal" ? "Diario" : "Ajustes"}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Add Modal */}
+      {showAddModal && <AddHabitModal onClose={() => setShowAddModal(false)} onAdd={addHabit} />}
     </div>
   );
 }
-""")
+''')
 
-print("\n✅ Todos los archivos creados!")
-print("Ejecuta: cd ~/habit-duo-fix && git add -A && git commit -m 'refactor: modular architecture, timezone fix, progressive habits' && git push origin main")
+    # ========================
+    # .github/workflows/deploy.yml
+    # ========================
+    write(os.path.join(base, ".github", "workflows", "deploy.yml"), '''name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+''')
+
+    # ========================
+    # .nojekyll
+    # ========================
+    write(os.path.join(base, "out", ".nojekyll"), "")
+
+    # ========================
+    # next-env.d.ts
+    # ========================
+    write(os.path.join(base, "next-env.d.ts"), '''/// <reference types="next" />
+/// <reference types="next/image-types/global" />
+''')
+
+    # ========================
+    # .gitignore
+    # ========================
+    write(os.path.join(base, ".gitignore"), '''node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+''')
+
+    print("\n✅ All files generated! Now run:")
+    print("  cd " + base)
+    print("  npm install")
+    print("  npm run build")
+    print("  git add -A && git commit -m 'v2.0: barrier bonus + smart notifications + global levels + achievements' && git push")
+
+if __name__ == "__main__":
+    main()
+''')
+
+---
+
+## Cómo usarlo
+
+1. Copiá todo el código de arriba y guardalo como `generate.py` en tu máquina local
+2. Corré:
+```bash
+python3 generate.py
+npm install
+npm run build
+git add -A && git commit -m "v2.0: barrier bonus + smart notifs + levels + achievements" && git push

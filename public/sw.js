@@ -1,44 +1,86 @@
-// Service Worker for HabitDuo PWA
-const CACHE_NAME = 'habitduo-v2';
+const CACHE_NAME = "habit-duo-v2";
+const ASSETS = ["/habit-duo/"];
 
-self.addEventListener('install', (event) => {
-  console.log('[SW] Installed');
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  console.log('[SW] Activated');
-  event.waitUntil(clients.claim());
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
 });
 
-self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
-  const title = data.title || 'HabitDuo';
-  const options = {
-    body: data.body || '¡Hora de completar tus hábitos! 🔥',
-    icon: '/habit-duo/icons/icon-192.png',
-    badge: '/habit-duo/icons/icon-192.png',
-    vibrate: [100, 50, 100],
-    data: {
-      url: data.url || '/habit-duo/'
-    }
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const url = event.notification.data?.url || '/habit-duo/';
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url.includes('habit-duo') && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(url);
-      }
-    })
+self.addEventListener("fetch", (e) => {
+  e.respondWith(
+    caches.match(e.request).then((r) => r || fetch(e.request))
   );
 });
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SCHEDULE_NOTIFICATIONS") {
+    scheduleSmartNotifications(event.data.payload);
+  }
+  if (event.data && event.data.type === "CANCEL_NOTIFICATIONS") {
+    cancelAllNotifications();
+  }
+});
+
+async function scheduleSmartNotifications(payload) {
+  const { todayXp, effectiveGoal, incompleteHabits, streak } = payload;
+  await cancelAllNotifications();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (todayXp < effectiveGoal * 0.5) {
+    const t = new Date(today); t.setHours(18,0,0,0);
+    if (t > now) {
+      scheduleNotif("streak-risk", t,
+        "\ud83d\udd25 Tu racha esta en riesgo",
+        "Te faltan " + (effectiveGoal - todayXp) + " XP. Vamos!"
+      );
+    }
+  }
+
+  if (todayXp < effectiveGoal) {
+    const t = new Date(today); t.setHours(21,0,0,0);
+    if (t > now) {
+      scheduleNotif("last-chance", t,
+        "\u23f3 Ultima oportunidad",
+        "Te faltan " + (effectiveGoal - todayXp) + " XP. Salva tu racha!"
+      );
+    }
+  }
+
+  if (incompleteHabits && incompleteHabits.length > 0) {
+    const t = new Date(today); t.setHours(17,0,0,0);
+    if (t > now) {
+      const h = incompleteHabits[0];
+      scheduleNotif("habit-reminder", t,
+        h.name + " te espera",
+        h.progressive
+          ? (h.minAmount || 5) + " " + (h.unit || "min") + " ahora valen " + (h.barrierBonus || 10) + " XP"
+          : "Completalo y gana " + h.xpReward + " XP!"
+      );
+    }
+  }
+}
+
+function scheduleNotif(id, time, title, body) {
+  const delay = time.getTime() - Date.now();
+  if (delay > 0 && delay < 86400000) {
+    setTimeout(() => {
+      self.registration.showNotification(title, {
+        body, icon: "/habit-duo/icon-192.png", tag: id, vibrate: [200,100,200]
+      });
+    }, delay);
+  }
+}
+
+async function cancelAllNotifications() {
+  self.registration.getNotifications().then(ns => ns.forEach(n => n.close()));
+}
