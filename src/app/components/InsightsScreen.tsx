@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Habit, JournalEntry, AppSettings, Achievement } from "../types";
-import { getWeekDates, getDayXp, getHabitStreak, getCompletionRate, getRateColor, getRateLabel, getLocalDate, getXpLevel, getTotalXp, getOverallStreak, ACHIEVEMENT_DEFS } from "../utils";
+import { Habit, JournalEntry, AppSettings, Achievement, ACHIEVEMENT_DEFS } from "../types";
+import { getWeekDates, getDayXp, getHabitStreak, getCompletionRate, getRateColor, getRateLabel, getLocalDate, getXpLevel, getTotalXp, getOverallStreak } from "../utils";
 
 interface Props {
   habits: Habit[];
