@@ -10,6 +10,13 @@ interface Props {
   onArchive: (id: string) => void;
 }
 
+const FREQ_LABELS: Record<string, string> = {
+  daily: "Diario",
+  "3x": "3x/semana",
+  "2x": "2x/semana",
+  "1x": "1x/semana",
+};
+
 export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onDelete, onArchive }: Props) {
   const today = getLocalDate();
   const isCompleted = habit.completions?.includes(today) ?? false;
@@ -26,6 +33,8 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
   const unit = habit.unit || "unidades";
   const reachedMin = isProgressive && amount >= minAmount;
   const quickAmounts = [5, 10, 15, 30];
+  const freqLabel = FREQ_LABELS[habit.frequency] || "Diario";
+  const isDaily = habit.frequency === "daily";
 
   let bgColor = "#1e2a4a";
   if (isBuild && isProgressive && reachedMin) bgColor = "#1a3a2a";
@@ -42,7 +51,7 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
           <div>
             <div className="font-semibold text-sm">{habit.name}</div>
             <div className="text-xs" style={{ color: "#b2bec3" }}>
-              {isBuild ? "Construir" : "Evitar"} · {habit.xpReward} XP max
+              {isBuild ? "Construir" : "Evitar"} · {habit.xpReward} XP · <span style={{ color: isDaily ? "#b2bec3" : "#fdcb6e" }}>{freqLabel}</span>
             </div>
           </div>
         </div>
@@ -53,6 +62,12 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
           </span>
         </div>
       </div>
+
+      {!isDaily && (
+        <div className="text-xs mb-2 px-1" style={{ color: "#fdcb6e" }}>
+          No cuenta para la meta diaria automatica
+        </div>
+      )}
 
       <div className="w-full h-1.5 rounded-full mb-2" style={{ background: "#2d3436" }}>
         <div className="h-full rounded-full" style={{ width: `${rate * 100}%`, background: rateColor }} />

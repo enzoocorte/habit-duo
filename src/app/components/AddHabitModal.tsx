@@ -15,6 +15,7 @@ export default function AddHabitModal({ onClose, onAdd }: Props) {
   const [unit, setUnit] = useState("min");
   const [minAmount, setMinAmount] = useState(5);
   const [barrierBonus, setBarrierBonus] = useState(10);
+  const [frequency, setFrequency] = useState<"daily" | "3x" | "2x" | "1x">("daily");
 
   const handleSubmit = () => {
     if (!name.trim()) return;
@@ -31,6 +32,7 @@ export default function AddHabitModal({ onClose, onAdd }: Props) {
       amounts: {},
       completions: [],
       skips: [],
+      frequency,
     });
   };
 
@@ -60,6 +62,24 @@ export default function AddHabitModal({ onClose, onAdd }: Props) {
           <div className="flex gap-2">
             <button onClick={() => setHabitType("build")} className="flex-1 py-2 rounded-lg text-sm font-bold" style={{ background: habitType === "build" ? "#00b894" : "#2d3436", color: "white" }}>Construir</button>
             <button onClick={() => { setHabitType("avoid"); setProgressive(false); }} className="flex-1 py-2 rounded-lg text-sm font-bold" style={{ background: habitType === "avoid" ? "#e17055" : "#2d3436", color: "white" }}>Evitar</button>
+          </div>
+        </div>
+        <div className="mb-4">
+          <label className="text-xs font-bold block mb-1" style={{ color: "#b2bec3" }}>Frecuencia</label>
+          <div className="flex gap-2">
+            {(["daily", "3x", "2x", "1x"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFrequency(f)}
+                className="flex-1 py-2 rounded-lg text-xs font-bold"
+                style={{ background: frequency === f ? "#6c5ce7" : "#2d3436", color: "white" }}
+              >
+                {f === "daily" ? "Diario" : f}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10px] mt-1" style={{ color: "#b2bec3" }}>
+            Solo los habitos "Diario" cuentan para la meta automatica. Los demas suman XP igual.
           </div>
         </div>
         {habitType === "build" && (
@@ -93,7 +113,6 @@ export default function AddHabitModal({ onClose, onAdd }: Props) {
         <div className="mb-4">
           <label className="text-xs font-bold block mb-1" style={{ color: "#b2bec3" }}>XP maximo {habitType === "avoid" ? "(perder si caes)" : progressive ? "(tope por dia)" : "(al completar)"}</label>
           <input type="number" min={1} value={xpReward} onChange={(e) => setXpReward(Math.max(1, parseInt(e.target.value) || 1))} className="w-full px-3 py-2 rounded-lg text-sm text-black" />
-          {progressive && <div className="text-[10px] mt-1" style={{ color: "#b2bec3" }}>Ejemplo: {minAmount} {unit} = {barrierBonus} XP (barrera), luego +1 XP/{unit}. Maximo {xpReward} XP/dia.</div>}
         </div>
         <button onClick={handleSubmit} disabled={!name.trim()} className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: name.trim() ? "#6c5ce7" : "#2d3436", color: name.trim() ? "white" : "#b2bec3" }}>
           Crear Habito

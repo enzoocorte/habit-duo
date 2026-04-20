@@ -23,6 +23,18 @@ export function getWeekDates(): string[] {
   return dates;
 }
 
+// Cuántos XP vale un hábito por día esperado (según frecuencia)
+function getHabitDailyXp(habit: Habit): number {
+  const freqMultiplier: Record<string, number> = {
+    daily: 1,
+    "3x": 3 / 7,
+    "2x": 2 / 7,
+    "1x": 1 / 7,
+  };
+  const mult = freqMultiplier[habit.frequency] ?? 1;
+  return habit.xpReward * mult;
+}
+
 export function getHabitXp(habit: Habit, date: string): number {
   const isCompleted = habit.completions?.includes(date) ?? false;
   const isSkipped = habit.skips?.includes(date) ?? false;
@@ -61,12 +73,17 @@ export function getDayXp(habits: Habit[], date: string, journal?: JournalEntry):
   return total;
 }
 
+// Max XP posible si haces TODO hoy (solo hábitos diarios)
 export function getMaxPossibleXp(habits: Habit[]): number {
-  return habits.filter((h) => !h.archived).reduce((sum, h) => sum + h.xpReward, 0);
+  return habits.filter((h) => !h.archived && h.frequency === "daily").reduce((sum, h) => sum + h.xpReward, 0);
 }
 
-export function calcAutoGoal(habits: Habit[]): number {
-  return Math.round(getMaxPossibleXp(habits) * 0.75);
+// Meta inteligente: solo cuenta hábitos diarios + fracción de los ocasionales
+export function calcAutoGoal(habits: Habit[], percentage: number = 75): number {
+  const total = habits
+    .filter((h) => !h.archived)
+    .reduce((sum, h) => sum + getHabitDailyXp(h), 0);
+  return Math.round(total * (percentage / 100));
 }
 
 export function getOverallStreak(habits: Habit[], settings: AppSettings): number {
@@ -76,7 +93,9 @@ export function getOverallStreak(habits: Habit[], settings: AppSettings): number
   for (let i = 0; i < 365; i++) {
     const dateStr = checkDate.toISOString().split("T")[0];
     const dayXp = getDayXp(habits, dateStr);
-    const goal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+    const goal = settings.autoGoal
+      ? calcAutoGoal(habits, settings.goalPercentage ?? 75)
+      : settings.dailyGoal;
     if (dateStr === today) {
       if (dayXp >= goal) streak++;
     } else {
@@ -96,8 +115,6 @@ export function getHabitStreak(habit: Habit): number {
 
   for (let i = 0; i < 365; i++) {
     const dateStr = checkDate.toISOString().split("T")[0];
-
-    // No contar días antes de la creación del hábito
     if (dateStr < createdDate) break;
 
     const isCompleted = habit.completions?.includes(dateStr) ?? false;
@@ -106,13 +123,9 @@ export function getHabitStreak(habit: Habit): number {
 
     let done = false;
     if (habit.habitType === "avoid") {
-      // Solo cuenta como "evitado" si hay datos para ese día
-      // o si es hoy y no se marcó como caído
       if (dateStr === today) {
         done = !isCompleted && !isSkipped;
       } else {
-        // Días pasados: solo cuenta si hubo interacción (skip o complete)
-        // Si no hay datos, no asumimos que evitó
         const hasData = isCompleted || isSkipped;
         done = !isCompleted && hasData;
       }
@@ -132,7 +145,7 @@ export function getHabitStreak(habit: Habit): number {
 
 export function isWeekComplete(habits: Habit[], settings: AppSettings): boolean {
   const dates = getWeekDates();
-  const goal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+  const goal = settings.autoGoal ? calcAutoGoal(habits, settings.goalPercentage ?? 75) : settings.dailyGoal;
   return dates.every((d) => getDayXp(habits, d) >= goal);
 }
 
@@ -146,8 +159,6 @@ export function getCompletionRate(habit: Habit, days: number = 7): number {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
-
-    // No contar días antes de la creación
     if (dateStr < createdDate) continue;
     counted++;
 
@@ -158,7 +169,6 @@ export function getCompletionRate(habit: Habit, days: number = 7): number {
     if (habit.habitType === "avoid") {
       const hasData = isCompleted || isSkipped;
       if (!isCompleted && hasData) completed++;
-      // Si no hay datos, no cuenta ni bien ni mal
     } else if (habit.progressive) {
       if (amount >= (habit.minAmount ?? 1)) completed++;
     } else {
@@ -287,12 +297,12 @@ export function getNewlyUnlocked(prev: Achievement[], next: Achievement[]): Achi
 }
 
 export const DEFAULT_HABITS: Habit[] = [
-  { id: "h1", name: "Ejercicio", emoji: "🏃", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 10, barrierBonus: 20, amounts: {}, completions: [], skips: [], createdAt: undefined },
-  { id: "h2", name: "Leer", emoji: "📖", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [], createdAt: undefined },
-  { id: "h3", name: "Meditar", emoji: "🧘", habitType: "build", xpReward: 20, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [], createdAt: undefined },
-  { id: "h4", name: "Comer bien", emoji: "🥗", habitType: "build", xpReward: 25, progressive: false, amounts: {}, completions: [], skips: [], createdAt: undefined },
-  { id: "h5", name: "Comer mal", emoji: "🍔", habitType: "avoid", xpReward: 20, progressive: false, amounts: {}, completions: [], skips: [], createdAt: undefined },
-  { id: "h6", name: "Celular de mas", emoji: "📱", habitType: "avoid", xpReward: 15, progressive: false, amounts: {}, completions: [], skips: [], createdAt: undefined },
+  { id: "h1", name: "Ejercicio", emoji: "🏃", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 10, barrierBonus: 20, amounts: {}, completions: [], skips: [], frequency: "daily" },
+  { id: "h2", name: "Leer", emoji: "📖", habitType: "build", xpReward: 30, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [], frequency: "daily" },
+  { id: "h3", name: "Meditar", emoji: "🧘", habitType: "build", xpReward: 20, progressive: true, unit: "min", minAmount: 5, barrierBonus: 10, amounts: {}, completions: [], skips: [], frequency: "daily" },
+  { id: "h4", name: "Comer bien", emoji: "🥗", habitType: "build", xpReward: 25, progressive: false, amounts: {}, completions: [], skips: [], frequency: "daily" },
+  { id: "h5", name: "Comer mal", emoji: "🍔", habitType: "avoid", xpReward: 20, progressive: false, amounts: {}, completions: [], skips: [], frequency: "daily" },
+  { id: "h6", name: "Celular de mas", emoji: "📱", habitType: "avoid", xpReward: 15, progressive: false, amounts: {}, completions: [], skips: [], frequency: "daily" },
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -301,4 +311,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifications: false,
   notificationInterval: 180,
   smartNotifications: true,
+  goalPercentage: 75,
 };

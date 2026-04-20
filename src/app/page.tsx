@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Habit, JournalEntry, AppSettings, Achievement } from "./types";
 import {
   getLocalDate, calcAutoGoal, getOverallStreak, getDayXp,
-  getMaxPossibleXp, getTotalXp, checkAchievements, getNewlyUnlocked,
+  getTotalXp, checkAchievements, getNewlyUnlocked,
   DEFAULT_HABITS, DEFAULT_SETTINGS,
 } from "./utils";
 import XPHeader from "./components/XPHeader";
@@ -42,18 +42,29 @@ export default function Home() {
           ...habit,
           habitType: habit.habitType || "build",
           progressive: habit.progressive ?? false,
-          completions: [...new Set(habit.completions || [])],
-          skips: habit.skips || [],
+          completions: Array.isArray(habit.completions) ? [...new Set(habit.completions)] : [],
+          skips: Array.isArray(habit.skips) ? habit.skips : [],
           amounts: habit.amounts || {},
           archived: habit.archived ?? false,
           barrierBonus: habit.barrierBonus ?? (habit.minAmount ? habit.minAmount * 2 : undefined),
           createdAt: habit.createdAt || today,
+          frequency: habit.frequency || "daily",
         }));
         setHabits(migrated);
       } else {
         setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today })));
       }
-      if (s) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(s), smartNotifications: JSON.parse(s).smartNotifications ?? true });
+      if (s) {
+        const parsed = JSON.parse(s);
+        setSettings({
+          dailyGoal: parsed.dailyGoal ?? 50,
+          autoGoal: parsed.autoGoal ?? true,
+          notifications: parsed.notifications ?? false,
+          notificationInterval: parsed.notificationInterval ?? 180,
+          smartNotifications: parsed.smartNotifications ?? true,
+          goalPercentage: parsed.goalPercentage ?? 75,
+        });
+      }
       if (j) setJournalEntries(JSON.parse(j));
       if (a) setAchievements(JSON.parse(a));
     } catch (e) {
@@ -68,7 +79,9 @@ export default function Home() {
   useEffect(() => { if (loaded) localStorage.setItem("habitduo_journal", JSON.stringify(journalEntries)); }, [journalEntries, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("habitduo_achievements", JSON.stringify(achievements)); }, [achievements, loaded]);
 
-  const effectiveGoal = settings.autoGoal ? calcAutoGoal(habits) : settings.dailyGoal;
+  const effectiveGoal = settings.autoGoal
+    ? calcAutoGoal(habits, settings.goalPercentage ?? 75)
+    : settings.dailyGoal;
   const streak = getOverallStreak(habits, settings);
   const todayXp = getDayXp(habits, today, journalEntries[today] || undefined);
 

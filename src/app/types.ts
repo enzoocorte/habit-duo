@@ -13,6 +13,7 @@ export interface Habit {
   skips?: string[];
   archived?: boolean;
   createdAt?: string;
+  frequency: "daily" | "3x" | "2x" | "1x";
 }
 
 export interface JournalEntry {
@@ -35,6 +36,7 @@ export interface AppSettings {
   notifications: boolean;
   notificationInterval: number;
   smartNotifications: boolean;
+  goalPercentage: number;
 }
 
 export const MOOD_EMOJIS = ["😢", "😕", "😐", "🙂", "😄"];
