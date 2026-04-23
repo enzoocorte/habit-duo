@@ -17,6 +17,13 @@ import AchievementToast from "./components/AchievementToast";
 
 type Screen = "habits" | "insights" | "journal" | "settings";
 
+async function fireConfetti(particles: number = 100) {
+  try {
+    const confetti = (await import("canvas-confetti")).default;
+    confetti({ particleCount: particles, spread: 70, origin: { y: 0.6 } });
+  } catch {}
+}
+
 export default function Home() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -28,6 +35,7 @@ export default function Home() {
   const [celebrating, setCelebrating] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const prevGoalReached = useRef(false);
+  const achievementsRef = useRef<Achievement[]>([]);
   const today = getLocalDate();
 
   useEffect(() => {
@@ -66,7 +74,7 @@ export default function Home() {
         });
       }
       if (j) setJournalEntries(JSON.parse(j));
-      if (a) setAchievements(JSON.parse(a));
+      if (a) { const ach = JSON.parse(a); setAchievements(ach); achievementsRef.current = ach; }
     } catch (e) {
       console.error("Error loading data:", e);
       setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today })));
@@ -77,7 +85,7 @@ export default function Home() {
   useEffect(() => { if (loaded) localStorage.setItem("habitduo_habits", JSON.stringify(habits)); }, [habits, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("habitduo_settings", JSON.stringify(settings)); }, [settings, loaded]);
   useEffect(() => { if (loaded) localStorage.setItem("habitduo_journal", JSON.stringify(journalEntries)); }, [journalEntries, loaded]);
-  useEffect(() => { if (loaded) localStorage.setItem("habitduo_achievements", JSON.stringify(achievements)); }, [achievements, loaded]);
+  useEffect(() => { if (loaded) { localStorage.setItem("habitduo_achievements", JSON.stringify(achievements)); achievementsRef.current = achievements; } }, [achievements, loaded]);
 
   const effectiveGoal = settings.autoGoal
     ? calcAutoGoal(habits, settings.goalPercentage ?? 75)
@@ -85,46 +93,65 @@ export default function Home() {
   const streak = getOverallStreak(habits, settings);
   const todayXp = getDayXp(habits, today, journalEntries[today] || undefined);
 
+  // Achievement check - use ref to avoid infinite loops
   useEffect(() => {
     if (!loaded) return;
-    const prev = [...achievements];
-    const next = checkAchievements(habits, settings, journalEntries, prev);
-    const newly = getNewlyUnlocked(prev, next);
-    if (newly) {
-      setAchievements(next);
-      setNewAchievement(newly);
-      try { const c = require("canvas-confetti"); c.default({ particleCount: 100, spread: 70, origin: { y: 0.6 } }); } catch {}
-    } else if (next.length !== prev.length) {
-      setAchievements(next);
+    try {
+      const prev = achievementsRef.current;
+      const next = checkAchievements(habits, settings, journalEntries, prev);
+      const newly = getNewlyUnlocked(prev, next);
+      if (newly) {
+        setAchievements(next);
+        setNewAchievement(newly);
+        fireConfetti(100);
+      } else if (next.length !== prev.length) {
+        setAchievements(next);
+      }
+    } catch (e) {
+      console.error("Achievement check error:", e);
     }
   }, [habits, journalEntries, loaded]);
 
+  // Goal reached celebration
   useEffect(() => {
     if (!loaded) return;
-    const reached = todayXp >= effectiveGoal;
-    if (reached && !prevGoalReached.current) {
-      setCelebrating(true);
-      try { const c = require("canvas-confetti"); c.default({ particleCount: 150, spread: 90, origin: { y: 0.6 } }); } catch {}
-      setTimeout(() => setCelebrating(false), 2000);
-      if (settings.notifications && "Notification" in window && Notification.permission === "granted") {
-        new Notification("Dia epico desbloqueado!", { body: `Llegaste a ${todayXp} XP!`, icon: "/habit-duo/icon-192.png", tag: "celebration" });
+    try {
+      const reached = todayXp >= effectiveGoal;
+      if (reached && !prevGoalReached.current) {
+        setCelebrating(true);
+        fireConfetti(150);
+        setTimeout(() => setCelebrating(false), 2000);
+        if (settings.notifications && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+          try {
+            new Notification("Dia epico desbloqueado!", { body: `Llegaste a ${todayXp} XP!`, icon: "/habit-duo/icon-192.png", tag: "celebration" });
+          } catch {}
+        }
       }
+      prevGoalReached.current = reached;
+    } catch (e) {
+      console.error("Celebration error:", e);
     }
-    prevGoalReached.current = reached;
   }, [todayXp, effectiveGoal, loaded, settings.notifications]);
 
+  // Smart notifications
   useEffect(() => {
     if (!loaded || !settings.notifications || !settings.smartNotifications) return;
-    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.ready.then((reg) => {
-        const incomplete = habits.filter(h => !h.archived).filter(h => {
-          if (h.habitType === "avoid") return h.completions?.includes(today);
-          if (h.progressive) return (h.amounts?.[today] ?? 0) < (h.minAmount ?? 1);
-          return !h.completions?.includes(today);
-        }).map(h => ({ name: h.name, progressive: h.progressive, minAmount: h.minAmount, unit: h.unit, barrierBonus: h.barrierBonus, xpReward: h.xpReward }));
-        reg.active?.postMessage({ type: "SCHEDULE_NOTIFICATIONS", payload: { todayXp, effectiveGoal, incompleteHabits: incomplete, streak } });
-      }).catch(() => {});
+    try {
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.ready.then((reg) => {
+          const incomplete = habits.filter(h => !h.archived).filter(h => {
+            if (h.habitType === "avoid") return h.completions?.includes(today);
+            if (h.progressive) return (h.amounts?.[today] ?? 0) < (h.minAmount ?? 1);
+            return !h.completions?.includes(today);
+          }).map(h => ({ name: h.name, progressive: h.progressive, minAmount: h.minAmount, unit: h.unit, barrierBonus: h.barrierBonus, xpReward: h.xpReward }));
+          reg.active?.postMessage({ type: "SCHEDULE_NOTIFICATIONS", payload: { todayXp, effectiveGoal, incompleteHabits: incomplete, streak } });
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error("Notification error:", e);
     }
   }, [todayXp, effectiveGoal, habits, streak, loaded, settings.notifications, settings.smartNotifications]);
 
@@ -161,11 +188,13 @@ export default function Home() {
   const saveJournal = useCallback((entry: JournalEntry) => { setJournalEntries((prev) => ({ ...prev, [today]: entry })); }, [today]);
 
   const handleExport = useCallback(() => {
-    const data = { habits, settings, journalEntries, achievements, exportedAt: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `habitduo-backup-${today}.json`; a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const data = { habits, settings, journalEntries, achievements, exportedAt: new Date().toISOString() };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `habitduo-backup-${today}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { console.error("Export error:", e); }
   }, [habits, settings, journalEntries, achievements, today]);
 
   const handleImport = useCallback(() => {
@@ -173,15 +202,29 @@ export default function Home() {
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]; if (!file) return;
       const reader = new FileReader();
-      reader.onload = (ev) => { try { const d = JSON.parse(ev.target?.result as string); if (d.habits) setHabits(d.habits); if (d.settings) setSettings(d.settings); if (d.journalEntries) setJournalEntries(d.journalEntries); if (d.achievements) setAchievements(d.achievements); } catch { alert("Error al importar"); } };
+      reader.onload = (ev) => {
+        try {
+          const d = JSON.parse(ev.target?.result as string);
+          if (d.habits) setHabits(d.habits);
+          if (d.settings) setSettings(d.settings);
+          if (d.journalEntries) setJournalEntries(d.journalEntries);
+          if (d.achievements) setAchievements(d.achievements);
+        } catch { alert("Error al importar"); }
+      };
       reader.readAsText(file);
     };
     input.click();
   }, []);
 
   const handleReset = useCallback(() => {
-    setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today }))); setSettings(DEFAULT_SETTINGS); setJournalEntries({}); setAchievements([]);
-    localStorage.removeItem("habitduo_habits"); localStorage.removeItem("habitduo_settings"); localStorage.removeItem("habitduo_journal"); localStorage.removeItem("habitduo_achievements");
+    setHabits(DEFAULT_HABITS.map(h => ({ ...h, createdAt: today })));
+    setSettings(DEFAULT_SETTINGS);
+    setJournalEntries({});
+    setAchievements([]);
+    localStorage.removeItem("habitduo_habits");
+    localStorage.removeItem("habitduo_settings");
+    localStorage.removeItem("habitduo_journal");
+    localStorage.removeItem("habitduo_achievements");
   }, []);
 
   const screens: Record<Screen, string> = { habits: "🏠", insights: "📊", journal: "📝", settings: "⚙️" };
