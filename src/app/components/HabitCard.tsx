@@ -36,12 +36,17 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
   const freqLabel = FREQ_LABELS[habit.frequency] || "Diario";
   const isDaily = habit.frequency === "daily";
 
+  // Para avoid: 3 estados
+  const avoidFell = !isBuild && isCompleted;      // caí
+  const avoidAvoided = !isBuild && isSkipped && !isCompleted;  // lo evité (confirmado)
+  const avoidPending = !isBuild && !isCompleted && !isSkipped; // todavía no confirmé
+
   let bgColor = "#1e2a4a";
   if (isBuild && isProgressive && reachedMin) bgColor = "#1a3a2a";
   else if (isBuild && !isProgressive && isCompleted) bgColor = "#1a3a2a";
-  else if (!isBuild && !isCompleted && !isSkipped) bgColor = "#1a3a2a";
-  else if (!isBuild && isCompleted) bgColor = "#3a1a1a";
-  else if (isSkipped) bgColor = "#2d2d3a";
+  else if (avoidAvoided) bgColor = "#1a3a2a";
+  else if (avoidFell) bgColor = "#3a1a1a";
+  else if (isSkipped && isBuild) bgColor = "#2d2d3a";
 
   return (
     <div className="habit-card rounded-xl p-4 mb-3" style={{ background: bgColor, border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -73,6 +78,68 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
         <div className="h-full rounded-full" style={{ width: `${rate * 100}%`, background: rateColor }} />
       </div>
 
+      {/* ====== HÁBITO DE EVITAR - 3 ESTADOS ====== */}
+      {!isBuild && (
+        <div>
+          {avoidPending && (
+            <div>
+              <button
+                onClick={() => onSkip(habit.id)}
+                className="w-full py-2.5 rounded-lg font-bold text-sm mb-2"
+                style={{ background: "#00b894", color: "white" }}
+              >
+                🛡 Lo evité (+{habit.xpReward} XP)
+              </button>
+              <button
+                onClick={() => onToggle(habit.id)}
+                className="w-full py-2.5 rounded-lg font-bold text-sm"
+                style={{ background: "#2d3436", color: "#e17055", border: "1px solid #e17055" }}
+              >
+                😔 Caí (-{habit.xpReward} XP)
+              </button>
+            </div>
+          )}
+          {avoidAvoided && (
+            <div>
+              <div className="w-full py-2.5 rounded-lg font-bold text-sm text-center mb-2" style={{ background: "#00b894", color: "white" }}>
+                ✅ Evitado (+{habit.xpReward} XP)
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => onSkip(habit.id)}
+                  className="flex-1 py-2 rounded-lg text-xs"
+                  style={{ background: "#2d3436", color: "#b2bec3" }}
+                >
+                  Deshacer
+                </button>
+                <button
+                  onClick={() => onToggle(habit.id)}
+                  className="flex-1 py-2 rounded-lg text-xs"
+                  style={{ background: "#3a1a1a", color: "#e17055" }}
+                >
+                  En realidad caí
+                </button>
+              </div>
+            </div>
+          )}
+          {avoidFell && (
+            <div>
+              <div className="w-full py-2.5 rounded-lg font-bold text-sm text-center mb-2" style={{ background: "#e17055", color: "white" }}>
+                😔 Caíste (-{habit.xpReward} XP)
+              </div>
+              <button
+                onClick={() => onToggle(habit.id)}
+                className="w-full py-2 rounded-lg text-xs"
+                style={{ background: "#2d3436", color: "#b2bec3" }}
+              >
+                Deshacer
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ====== HÁBITO PROGRESIVO DE CONSTRUIR ====== */}
       {isBuild && isProgressive && (
         <div>
           <div className="text-xs mb-2 px-1" style={{ color: "#b2bec3" }}>
@@ -130,6 +197,7 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
         </div>
       )}
 
+      {/* ====== HÁBITO SIMPLE DE CONSTRUIR ====== */}
       {isBuild && !isProgressive && (
         <button
           onClick={() => onToggle(habit.id)}
@@ -140,23 +208,7 @@ export default function HabitCard({ habit, onToggle, onSkip, onUpdateAmount, onD
         </button>
       )}
 
-      {!isBuild && (
-        <div>
-          <button
-            onClick={() => onToggle(habit.id)}
-            className="w-full py-2.5 rounded-lg font-bold text-sm"
-            style={{
-              background: isCompleted ? "#e17055" : "#2d3436",
-              color: isCompleted ? "white" : "#b2bec3",
-              border: isCompleted ? "none" : "1px solid #e17055",
-            }}
-          >
-            {isCompleted ? `Caiste (-${habit.xpReward} XP)` : `Evitado (+${habit.xpReward} XP)`}
-          </button>
-          {!isCompleted && <div className="text-xs text-center mt-1" style={{ color: "#00b894" }}>Vas bien! No caiste hoy.</div>}
-        </div>
-      )}
-
+      {/* Acciones */}
       <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
         <div className="flex gap-2">
           {!isSkipped && !isCompleted && isBuild && !isProgressive && (

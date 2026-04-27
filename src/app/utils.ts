@@ -23,7 +23,6 @@ export function getWeekDates(): string[] {
   return dates;
 }
 
-// Cuántos XP vale un hábito por día esperado (según frecuencia)
 function getHabitDailyXp(habit: Habit): number {
   const freqMultiplier: Record<string, number> = {
     daily: 1,
@@ -41,9 +40,12 @@ export function getHabitXp(habit: Habit, date: string): number {
   const amount = habit.amounts?.[date] ?? 0;
 
   if (habit.habitType === "avoid") {
-    if (isSkipped) return 0;
+    // completions = "caí" (perdí XP)
+    // skips = "lo evité" (confirmado, gano XP)
+    // sin datos = todavía no confirmé (0 XP)
     if (isCompleted) return -habit.xpReward;
-    return habit.xpReward;
+    if (isSkipped) return habit.xpReward;
+    return 0;
   }
 
   if (habit.progressive) {
@@ -73,12 +75,10 @@ export function getDayXp(habits: Habit[], date: string, journal?: JournalEntry):
   return total;
 }
 
-// Max XP posible si haces TODO hoy (solo hábitos diarios)
 export function getMaxPossibleXp(habits: Habit[]): number {
   return habits.filter((h) => !h.archived && h.frequency === "daily").reduce((sum, h) => sum + h.xpReward, 0);
 }
 
-// Meta inteligente: solo cuenta hábitos diarios + fracción de los ocasionales
 export function calcAutoGoal(habits: Habit[], percentage: number = 75): number {
   const total = habits
     .filter((h) => !h.archived)
@@ -123,12 +123,8 @@ export function getHabitStreak(habit: Habit): number {
 
     let done = false;
     if (habit.habitType === "avoid") {
-      if (dateStr === today) {
-        done = !isCompleted && !isSkipped;
-      } else {
-        const hasData = isCompleted || isSkipped;
-        done = !isCompleted && hasData;
-      }
+      // Solo cuenta como "evitado" si está en skips (confirmado)
+      done = isSkipped && !isCompleted;
     } else if (habit.progressive) {
       done = amount >= (habit.minAmount ?? 1);
     } else {
@@ -167,8 +163,7 @@ export function getCompletionRate(habit: Habit, days: number = 7): number {
     const amount = habit.amounts?.[dateStr] ?? 0;
 
     if (habit.habitType === "avoid") {
-      const hasData = isCompleted || isSkipped;
-      if (!isCompleted && hasData) completed++;
+      if (isSkipped && !isCompleted) completed++;
     } else if (habit.progressive) {
       if (amount >= (habit.minAmount ?? 1)) completed++;
     } else {
@@ -261,7 +256,7 @@ export function checkAchievements(
     all_habits_day: () => {
       const active = habits.filter(h => !h.archived);
       return active.length > 0 && active.every(h => {
-        if (h.habitType === "avoid") return !h.completions?.includes(today);
+        if (h.habitType === "avoid") return h.skips?.includes(today) && !h.completions?.includes(today);
         if (h.progressive) return (h.amounts?.[today] ?? 0) >= (h.minAmount ?? 1);
         return h.completions?.includes(today);
       });
